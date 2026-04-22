@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <!-- Layers icon (3 stacked layers) in green on transparent background -->
+  <path d="M32 8L56 22L32 36L8 22L32 8Z" stroke="#c8f135" stroke-width="3" fill="none"/>
+  <path d="M32 28L56 42L32 56L8 42L32 28Z" stroke="#c8f135" stroke-width="3" fill="none"/>
+  <path d="M32 18L48 26L32 34L16 26L32 18Z" fill="#c8f135"/>
+</svg>
