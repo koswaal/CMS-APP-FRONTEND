@@ -884,27 +884,30 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
 
       {/* Modal de confirmación estilo notificación iPhone - Eliminación de menú padre */}
       {parentDeleteModal.isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-fade-in">
-          {/* Backdrop con blur */}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          {/* Backdrop simple sin blur para mejor rendimiento */}
           <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            className="absolute inset-0 bg-black/50"
+            style={{ willChange: 'opacity' }}
             onClick={() => {
               setDeleteConfirmText('');
               setParentDeleteModal({ isOpen: false, menu: null, childrenCount: 0 });
             }}
           />
 
-          {/* Notificación estilo iPhone */}
+          {/* Notificación estilo iPhone - optimizada para GPU */}
           <div
-            className={`relative w-full max-w-sm transform transition-all duration-300 ease-out scale-100 ${
+            className={`relative w-full max-w-sm ${
               isDark
-                ? 'bg-[#1c1c1e] shadow-2xl shadow-black/50'
-                : 'bg-white shadow-2xl shadow-gray-500/30'
+                ? 'bg-[#1c1c1e]'
+                : 'bg-white'
             } rounded-3xl overflow-hidden`}
             style={{
               boxShadow: isDark
-                ? '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05)'
-                : '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)'
+                ? '0 20px 40px rgba(0, 0, 0, 0.6)'
+                : '0 20px 40px rgba(0, 0, 0, 0.2)',
+              willChange: 'transform, opacity',
+              animation: 'modalIn 200ms ease-out forwards'
             }}
           >
             {/* Icono de advertencia */}
@@ -1005,6 +1008,14 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
           </div>
         </div>
       )}
+
+      {/* Animación ligera para modal - solo transform y opacity */}
+      <style>{`
+        @keyframes modalIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
 
       {/* Modal de edición de menú */}
       {editModalOpen && (
