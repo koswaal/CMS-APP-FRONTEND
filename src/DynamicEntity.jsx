@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { ThemeContext } from './ThemeContext';
 import { API_URL } from './config';
 
-export default function DynamicEntity({ entityType: initialEntityType, onBack }) {
+export default function DynamicEntity({ entityType: initialEntityType, onBack, onRecordChanged }) {
   const { theme } = useContext(ThemeContext);
   const isDark = theme === 'dark';
 
@@ -112,14 +112,15 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
     loadSelectOptions();
   }, [entityType]);
 
-  // Cargar registros
-  const fetchRecords = async (page = 1, search = searchTerm) => {
+  // Cargar registros (perPageOverride evita estado obsoleto al cambiar el select antes del re-render)
+  const fetchRecords = async (page = 1, search = searchTerm, perPageOverride = null) => {
     setLoading(true);
     try {
+      const perPage = perPageOverride != null ? perPageOverride : itemsPerPage;
       // Construir URL con parámetros de búsqueda
       const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
       const response = await fetch(
-        `${API_URL}/dynamic/${entityType.slug}?page=${page}&per_page=${itemsPerPage}${searchParam}`,
+        `${API_URL}/dynamic/${entityType.slug}?page=${page}&per_page=${perPage}${searchParam}`,
         {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
@@ -142,7 +143,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
         }];
 
         // Si el EntityType es contenedor, cargar registros de sus hijos
-        if (entityType.is_container) {
+        if (entityType.is_container && !searchTerm) {
           try {
             const childTypesResponse = await fetch(
               `${API_URL}/entity-types`,
@@ -293,10 +294,11 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
 
   // Cambiar cantidad de registros por página
   const handleItemsPerPageChange = (value) => {
-    const newValue = parseInt(value);
+    const newValue = parseInt(value, 10);
+    if (Number.isNaN(newValue) || newValue < 1) return;
     setItemsPerPage(newValue);
-    setPagination(prev => ({ ...prev, per_page: newValue, current_page: 1 }));
-    fetchRecords(1); // Recargar desde página 1 con nuevo límite
+    setPagination((prev) => ({ ...prev, per_page: newValue, current_page: 1 }));
+    fetchRecords(1, searchTerm, newValue);
   };
 
   // Cambiar página de un EntityType específico
@@ -330,6 +332,8 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
       const data = await response.json();
       if (data.success) {
         fetchRecords(pagination.current_page);
+        // Notificar al dashboard que hay cambios para refrescar estadísticas
+        if (onRecordChanged) onRecordChanged();
       } else {
         alert(data.message || 'Error al eliminar');
       }
@@ -363,6 +367,8 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
       if (data.success) {
         clearFormState();
         fetchRecords(pagination.current_page);
+        // Notificar al dashboard que hay cambios para refrescar estadísticas
+        if (onRecordChanged) onRecordChanged();
       } else {
         if (data.errors) {
           const errorMessages = Object.values(data.errors).flat().join('\n');
@@ -493,24 +499,21 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
             type="text"
             value={editingRecord ? editingRecord.id : 'Se generará automáticamente'}
             disabled
-            className={`w-full px-4 py-2 rounded-lg border cursor-not-allowed ${
-              isDark
-                ? 'bg-gray-800 border-gray-700 text-gray-500'
-                : 'bg-gray-100 border-gray-300 text-gray-500'
+            className={`w-full px-4 py-2 rounded-lg border bg-gray-100 text-gray-500 cursor-not-allowed ${
+              isDark ? 'border-gray-700 bg-[#1a1a1a] text-gray-500' : 'border-gray-300'
             }`}
+            placeholder={editingRecord ? '' : 'Se asignará automáticamente'}
           />
         );
 
       case 'correlativo':
         return (
           <input
-            type="number"
-            value={value || ''}
+            type="text"
+            value={editingRecord ? value : 'Se generará automáticamente'}
             disabled
-            className={`w-full px-4 py-2 rounded-lg border cursor-not-allowed ${
-              isDark
-                ? 'bg-gray-800 border-gray-700 text-gray-500'
-                : 'bg-gray-100 border-gray-300 text-gray-500'
+            className={`w-full px-4 py-2 rounded-lg border bg-gray-100 text-gray-500 cursor-not-allowed ${
+              isDark ? 'border-gray-700 bg-[#1a1a1a] text-gray-500' : 'border-gray-300'
             }`}
             placeholder={editingRecord ? '' : 'Se asignará automáticamente'}
           />
@@ -537,25 +540,27 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
   if (showForm) {
     return (
       <div className={`min-h-screen p-6 ${isDark ? 'bg-[#0f0f0f] text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
-        <div className={`max-w-2xl mx-auto rounded-xl shadow-lg overflow-hidden ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
+        <div className={`max-w-4xl mx-auto rounded-xl shadow-lg overflow-hidden ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
           <div className={`px-6 py-4 border-b ${isDark ? 'border-gray-700 bg-[#c8f135]/10' : 'border-gray-200 bg-green-50'}`}>
             <h2 className="text-xl font-bold text-[#c8f135]">
               {editingRecord ? 'Editar' : 'Nuevo'} {entityType.form_title}
             </h2>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {entityType.fields?.map((field) => (
-              <div key={field.name}>
-                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                  {field.label}
-                  {field.required && <span className="text-red-500 ml-1">*</span>}
-                </label>
-                {renderFormField(field)}
-              </div>
-            ))}
+          <form onSubmit={handleSubmit} className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-8">
+              {entityType.fields?.map((field) => (
+                <div key={field.name} className={`p-2 ${field.type === 'textarea' ? 'md:col-span-2' : ''}`}>
+                  <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {field.label}
+                    {field.required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  {renderFormField(field)}
+                </div>
+              ))}
+            </div>
 
-            <div className={`flex gap-4 pt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-300'}`}>
+            <div className={`flex gap-4 pt-8 mt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-300'}`}>
               <button
                 type="submit"
                 className="flex-1 px-6 py-3 bg-[#c8f135] hover:bg-[#b8e125] text-[#1a1a1a] font-medium rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -578,7 +583,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
 
   // Listado
   return (
-    <div className={`min-h-screen p-6 ${isDark ? 'bg-[#0f0f0f] text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
+    <div className={`p-6 ${isDark ? 'bg-[#0f0f0f] text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -643,17 +648,16 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                 <select
                   value={itemsPerPage}
                   onChange={(e) => handleItemsPerPageChange(e.target.value)}
-                  className={`px-2 py-1 text-xs rounded border focus:ring-2 focus:ring-[#c8f135] ${
-                    isDark 
-                      ? 'bg-gray-800 border-gray-600 text-gray-200' 
-                      : 'bg-white border-gray-300 text-gray-700'
+                  className={`pl-3 pr-10 py-1.5 min-w-[4.75rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer ${
+                    isDark
+                      ? 'bg-[#1a1a1a] border-gray-700 text-gray-100'
+                      : 'bg-white border-gray-300 text-gray-900'
                   }`}
                 >
-                  {[5, 10, 15, 20, 25, 30, 40, 50, 75, 100].map((num) => (
-                    <option key={num} value={num}>
-                      {num} registros
-                    </option>
-                  ))}
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
                 </select>
               </div>
             </div>
@@ -662,7 +666,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
 
         {/* Error */}
         {error && (
-          <div className="bg-red-500/20 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg mb-4">
+          <div className="bg-red-500/20 border border-red-500/50 text-red-400 px-6 py-4 rounded-lg mb-4">
             {error}
           </div>
         )}
@@ -673,7 +677,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#c8f135]" />
           </div>
         ) : records.length === 0 ? (
-          <div className={`text-center py-16 rounded-xl ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
+          <div className={`py-16 px-6 rounded-xl flex flex-col items-center justify-center text-center ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
             <p className={`text-lg ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
               No hay registros aún
             </p>
@@ -692,18 +696,18 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                 <table className="w-full">
                   <thead className={isDark ? 'bg-[#0f0f0f]' : 'bg-gray-50'}>
                     <tr>
-                      <th className={`px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'} w-8`}></th>
-                      {entityType.fields?.slice(0, 4).map((field) => (
+                      <th className={`px-6 py-4 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'} w-8`}></th>
+                      <th className={`pl-4 pr-2 py-3 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Acciones
+                      </th>
+                      {entityType.fields?.map((field) => (
                         <th
                           key={field.name}
-                          className={`px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                          className={`px-6 py-4 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
                         >
                           {field.label}
                         </th>
                       ))}
-                      <th className={`px-4 py-3 text-right text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Acciones
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700/30">
@@ -715,9 +719,9 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                         return (
                           <React.Fragment key={et.id}>
                             {/* Fila de encabezado del EntityType */}
-                            {entityType.is_container && (
+                            {et.is_container && (
                               <tr className={`${isDark ? 'bg-[#c8f135]/10' : 'bg-green-50'}`}>
-                                <td className="px-4 py-3">
+                                <td className="px-6 py-4">
                                   {et.records.length > 0 && (
                                     <button
                                       onClick={() => {
@@ -744,7 +748,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                                     </button>
                                   )}
                                 </td>
-                                <td colSpan={4} className={`px-4 py-3 font-semibold ${isDark ? 'text-[#c8f135]' : 'text-green-700'}`}>
+                                <td colSpan={entityType.fields?.length + 1} className={`px-6 py-4 font-semibold ${isDark ? 'text-[#c8f135]' : 'text-green-700'}`}>
                                   {isChild && <span className="mr-2 ml-4">→</span>}
                                   {et.menu_name || et.form_title}
                                   <span className="ml-2 text-xs opacity-60">({et.records?.length || 0} registros)</span>
@@ -755,7 +759,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                             {/* Registros del EntityType */}
                             {(!entityType.is_container || isExpanded) && et.records?.length === 0 && searchTerm && (
                               <tr key="no-results">
-                                <td colSpan={6} className={`px-4 py-4 text-center text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                <td colSpan={entityType.fields?.length + 2} className={`px-6 py-4 text-left text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                   No se encontraron registros que coincidan con &quot;{searchTerm}&quot;
                                 </td>
                               </tr>
@@ -765,19 +769,11 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                                   key={record.id}
                                   className={`transition-colors ${isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-gray-50'} ${isChild ? 'bg-gray-900/30' : ''}`}
                                 >
-                                  <td className="px-4 py-3">
+                                  <td className="px-6 py-4">
                                     {isChild && <div className="w-4 h-4 border-l-2 border-[#c8f135]/50 ml-2"></div>}
                                   </td>
-                                  {entityType.fields?.slice(0, 4).map((field) => (
-                                    <td
-                                      key={field.name}
-                                      className={`px-4 py-3 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'} ${isChild ? 'pl-8' : ''}`}
-                                    >
-                                      {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
-                                    </td>
-                                  ))}
-                                  <td className="px-4 py-3 text-right">
-                                    <div className="flex items-center justify-end gap-2">
+                                  <td className="pl-4 pr-6 py-4 text-left">
+                                    <div className="flex items-center justify-start gap-2">
                                       <button
                                         onClick={() => handleEdit(record)}
                                         className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#c8f135]/20 text-[#c8f135]' : 'hover:bg-green-100 text-green-600'}`}
@@ -798,12 +794,20 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                                       </button>
                                     </div>
                                   </td>
+                                  {entityType.fields?.map((field) => (
+                                    <td
+                                      key={field.name}
+                                      className={`px-6 py-4 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'} ${isChild ? 'pl-8' : ''}`}
+                                    >
+                                      {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                             {/* Paginación del EntityType */}
                             {(!entityType.is_container || isExpanded) && et.pagination && et.pagination.last_page > 1 && (
                               <tr>
-                                <td colSpan={5} className="px-4 py-2">
+                                <td colSpan={entityType.fields?.length + 2} className="px-4 py-2">
                                   <div className="flex items-center justify-center gap-2">
                                     <button
                                       onClick={() => handleEntityTypePageChange(et.id, et.pagination.current_page - 1)}
@@ -839,7 +843,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                       })
                     ) : records.length === 0 && searchTerm ? (
                       <tr>
-                        <td colSpan={6} className={`px-4 py-4 text-center text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <td colSpan={entityType.fields?.length + 2} className={`px-4 py-4 text-center text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                           No se encontraron registros que coincidan con &quot;{searchTerm}&quot;
                         </td>
                       </tr>
@@ -849,16 +853,8 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                           key={record.id}
                           className={`transition-colors ${isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-gray-50'}`}
                         >
-                          <td className="px-4 py-3"></td>
-                          {entityType.fields?.slice(0, 4).map((field) => (
-                            <td
-                              key={field.name}
-                              className={`px-4 py-3 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
-                            >
-                              {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
-                            </td>
-                          ))}
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-6 py-4"></td>
+                          <td className="pl-4 pr-6 py-4 text-left">
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => handleEdit(record)}
@@ -880,6 +876,14 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack })
                               </button>
                             </div>
                           </td>
+                          {entityType.fields?.map((field) => (
+                            <td
+                              key={field.name}
+                              className={`px-6 py-4 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+                            >
+                              {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
+                            </td>
+                          ))}
                         </tr>
                       ))
                     )}

@@ -173,8 +173,10 @@ export default function AsyncSearchSelect({
 
       {/* Dropdown de resultados */}
       {isOpen && !disabled && (
-        <div className={`absolute z-50 w-full mt-1 rounded-lg shadow-lg border max-h-60 overflow-y-auto ${
-          isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'
+        <div className={`absolute z-50 w-full mt-2 rounded-xl shadow-2xl border max-h-60 overflow-y-auto backdrop-blur-sm transition-all duration-200 ease-out ${
+          isDark 
+            ? 'bg-[#1a1a1a]/95 border-gray-700 shadow-[#c8f135]/10' 
+            : 'bg-white/95 border-gray-200 shadow-[#c8f135]/15'
         }`}>
           {loading && options.length === 0 ? (
             <div className={`p-4 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -190,11 +192,13 @@ export default function AsyncSearchSelect({
                 <li
                   key={option[valueField]}
                   onClick={() => handleSelect(option)}
-                  className={`px-4 py-3 cursor-pointer transition-colors ${
-                    isDark 
-                      ? 'hover:bg-gray-800 text-gray-100' 
-                      : 'hover:bg-gray-100 text-gray-900'
-                  } ${selectedOption?.[valueField] === option[valueField] ? (isDark ? 'bg-gray-800' : 'bg-gray-100') : ''}`}
+                  className={`px-4 py-3 cursor-pointer transition-all duration-200 ease-in-out transform hover:scale-[1.01] rounded-md mx-2 my-1
+                    ${isDark 
+                      ? 'text-gray-100 hover:bg-gray-700 active:bg-gray-600 hover:shadow-lg'
+                      : 'text-gray-900 hover:bg-gray-200 active:bg-gray-300 hover:shadow-lg'}
+                    ${selectedOption?.[valueField] === option[valueField] 
+                      ? (isDark ? 'bg-gray-700 font-semibold shadow-md' : 'bg-gray-200 font-semibold shadow-md') 
+                      : ''}`}
                 >
                   <div className="font-medium">{option[displayField]}</div>
                   {option.descripcion && (

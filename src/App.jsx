@@ -4,6 +4,7 @@ import { ThemeProvider } from './ThemeContext';
 import { useContext } from 'react';
 import Login from './login';
 import Dashboard from './Dashboard';
+import Footer from './Footer';
 
 // Componente para proteger rutas
 function ProtectedRoute({ children }) {
@@ -46,7 +47,12 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
-          <AppRoutes />
+          <div className="min-h-screen flex flex-col">
+            <div className="flex-grow">
+              <AppRoutes />
+            </div>
+            <Footer />
+          </div>
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

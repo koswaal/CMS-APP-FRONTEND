@@ -31,9 +31,8 @@ export default function Users() {
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState({
     current_page: 1,
-    per_page: 5,
   });
-  const [itemsPerPage, setItemsPerPage] = useState(5); // Selector de registros por página
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   // Auto-limpiar mensaje de éxito después de 3 segundos
   useEffect(() => {
@@ -75,7 +74,7 @@ export default function Users() {
   useEffect(() => {
     loadUsers();
     loadCustomFieldDefinitions();
-    setPagination(prev => ({ ...prev, current_page: 1 }));
+    setPagination((prev) => ({ ...prev, current_page: 1 }));
   }, []);
 
   // Cargar definiciones de campos personalizados
@@ -231,9 +230,9 @@ export default function Users() {
   });
 
   // Paginación del lado del cliente
-  const totalPages = Math.ceil(filteredUsers.length / pagination.per_page) || 1;
-  const startIndex = (pagination.current_page - 1) * pagination.per_page;
-  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + pagination.per_page);
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1;
+  const startIndex = (pagination.current_page - 1) * itemsPerPage;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
 
   // Resetear a página 1 cuando cambia la búsqueda
   useEffect(() => {
@@ -258,7 +257,7 @@ export default function Users() {
         setSuccessMessage('Usuario eliminado correctamente');
         loadUsers();
         // Ajustar página si eliminamos el último item de la página
-        const newTotalPages = Math.ceil((filteredUsers.length - 1) / pagination.per_page);
+        const newTotalPages = Math.ceil((filteredUsers.length - 1) / itemsPerPage);
         if (pagination.current_page > newTotalPages && newTotalPages > 0) {
           setPagination(prev => ({ ...prev, current_page: newTotalPages }));
         }
@@ -287,7 +286,7 @@ export default function Users() {
         setSuccessMessage(data.message);
         loadUsers();
         // Ajustar página si toggle en última página con pocos items
-        const newTotalPages = Math.ceil(filteredUsers.length / pagination.per_page);
+        const newTotalPages = Math.ceil(filteredUsers.length / itemsPerPage);
         if (pagination.current_page > newTotalPages && newTotalPages > 0) {
           setPagination(prev => ({ ...prev, current_page: newTotalPages }));
         }
@@ -298,6 +297,13 @@ export default function Users() {
       setError('Error al cambiar estado del usuario');
       console.error(err);
     }
+  };
+
+  const handleItemsPerPageChange = (value) => {
+    const newValue = parseInt(value, 10);
+    if (Number.isNaN(newValue) || newValue < 1) return;
+    setItemsPerPage(newValue);
+    setPagination((prev) => ({ ...prev, current_page: 1 }));
   };
 
   return (
@@ -366,35 +372,32 @@ export default function Users() {
             </button>
           )}
         </div>
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
             {filteredUsers.length} {filteredUsers.length === 1 ? 'registro encontrado' : 'registros encontrados'}
             {searchTerm && ` para "${searchTerm}"`}
-            {filteredUsers.length > pagination.per_page && ` • Mostrando página ${pagination.current_page} de ${totalPages}`}
+            {filteredUsers.length > itemsPerPage && ` • Mostrando página ${pagination.current_page} de ${totalPages}`}
           </div>
-          {/* Selector de registros por página */}
-          <div className="flex items-center gap-2">
-            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                const newValue = parseInt(e.target.value);
-                setItemsPerPage(newValue);
-                setPagination(prev => ({ ...prev, per_page: newValue, current_page: 1 }));
-              }}
-              className={`px-2 py-1 text-xs rounded border focus:ring-2 focus:ring-[#c8f135] ${
-                isDark 
-                  ? 'bg-gray-800 border-gray-600 text-gray-200' 
-                  : 'bg-white border-gray-300 text-gray-700'
-              }`}
-            >
-              {[5, 10, 15, 20, 25, 30, 40, 50, 75, 100].map((num) => (
-                <option key={num} value={num}>
-                  {num} registros
-                </option>
-              ))}
-            </select>
-          </div>
+          {!loading && filteredUsers.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(e.target.value)}
+                className={`pl-3 pr-10 py-1.5 min-w-[4.75rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer ${
+                  isDark
+                    ? 'bg-[#1a1a1a] border-gray-700 text-gray-100'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
+              >
+                {[5, 10, 20, 50].map((num) => (
+                  <option key={num} value={num}>
+                    {num}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -519,7 +522,7 @@ export default function Users() {
           </div>
 
           {/* Paginación - solo si hay más registros que los mostrados por página */}
-          {filteredUsers.length > pagination.per_page && (
+          {filteredUsers.length > itemsPerPage && (
             <div className={`flex justify-center items-center gap-2 p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
               <button
                 onClick={() => setPagination(prev => ({ ...prev, current_page: prev.current_page - 1 }))}

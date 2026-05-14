@@ -142,6 +142,50 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) 
     'code', 'terminal', 'github', 'git-branch',
     'layers', 'tag', 'tags', 'hash', 'link', 'anchor',
     'anchor', 'aperture', 'anchor',
+
+    // Negocios y oficina
+    'briefcase', 'building', 'landmark', 'store', 'store-front', 'shop',
+    'wallet', 'coins', 'banknote', 'receipt', 'invoice', 'file-spreadsheet',
+    'presentation', 'chart-pie', 'chart-bar', 'chart-line', 'chart-area',
+
+    // Seguridad y protección
+    'shield', 'shield-check', 'shield-alert', 'shield-off',
+    'lock', 'lock-open', 'lock-keyhole', 'unlock', 'key', 'fingerprint',
+    'scan-eye', 'scan-face', 'scan-line', 'password', 'passcode',
+
+    // Trabajo industrial y mantenimiento
+    'wrench', 'tool', 'hammer', 'axe', 'pickaxe', 'shovel', 'trowel',
+    'drill', 'wrench-screwdriver', 'screwdriver', 'nut', 'bolt', 'cog',
+    'factory', 'warehouse', 'construction', 'hard-hat', 'helmet',
+
+    // Naturaleza y medio ambiente
+    'tree-pine', 'tree-deciduous', 'leaf', 'flower', 'flower-2',
+    'mountain', 'mountain-snow', 'sun', 'moon', 'cloud', 'cloud-rain',
+    'cloud-sun', 'cloud-moon', 'wind', 'droplets', 'flame', 'snowflake',
+
+    // Animales
+    'bug', 'bug-off', 'bug-play', 'cat', 'dog', 'fish', 'bird', 'rabbit',
+    'snail', 'turtle', 'worm', 'rat', 'mouse', 'squirrel',
+
+    // Deportes y actividades
+    'trophy', 'medal', 'award', 'target', 'crosshair', 'darts',
+    'football', 'basketball', 'baseball', 'volleyball', 'soccer-ball',
+    'bike', 'ski', 'snowboard', 'surfboard', 'swimming-pool',
+
+    // Ciencia y tecnología
+    'atom', 'dna', 'microscope', 'flask-conical', 'flask-round',
+    'graduation-cap', 'school', 'library', 'book-open-check',
+    'rocket', 'satellite', 'orbit', 'telescope', 'webhook', 'circuit-board',
+
+    // Redes y conectividad
+    'network', 'share', 'share-2', 'share-off', 'rss', 'wifi', 'wifi-off',
+    'antenna', 'broadcast', 'radio', 'radio-receiver',
+    'plug', 'plug-zap', 'unplug', 'usb', 'hdmi-port',
+
+    // Formas y símbolos
+    'circle', 'square', 'triangle', 'diamond', 'pentagon', 'hexagon', 'octagon',
+    'star', 'heart', 'sparkles', 'infinity', 'sigma', 'pi', 'omega',
+    'copyright', 'registered', 'trademark', 'service-mark',
   ];
 
   // Función para renderizar icono dinámico
@@ -358,7 +402,7 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) 
                           </svg>
                         </div>
                         {showParentIconDropdown && (
-                          <div className={`absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-60 overflow-auto ${
+                          <div className={`absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-96 overflow-auto ${
                             isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-300'
                           }`}>
                             <div className="p-2">
@@ -438,7 +482,7 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) 
                       </svg>
                     </div>
                     {showIconDropdown && (
-                      <div className={`absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-60 overflow-auto ${
+                      <div className={`absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-96 overflow-auto ${
                         isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-300'
                       }`}>
                         <div className="p-2">

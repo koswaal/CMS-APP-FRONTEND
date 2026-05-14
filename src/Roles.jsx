@@ -20,6 +20,8 @@ export default function Roles() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [pagination, setPagination] = useState({ current_page: 1 });
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   // Auto-limpiar mensaje de éxito
   useEffect(() => {
@@ -98,6 +100,21 @@ export default function Roles() {
     );
   });
 
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1;
+  const startIndex = (pagination.current_page - 1) * itemsPerPage;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, current_page: 1 }));
+  }, [searchTerm]);
+
+  const handleItemsPerPageChange = (value) => {
+    const newValue = parseInt(value, 10);
+    if (Number.isNaN(newValue) || newValue < 1) return;
+    setItemsPerPage(newValue);
+    setPagination((prev) => ({ ...prev, current_page: 1 }));
+  };
+
   const getRoleColor = (role) => {
     switch (role) {
       case 'desarrollador':
@@ -168,8 +185,31 @@ export default function Roles() {
             className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#c8f135] focus:border-transparent ${isDark ? 'border-gray-600 bg-gray-900 text-gray-100 placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
           />
         </div>
-        <div className={`mt-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-          {filteredUsers.length} {filteredUsers.length === 1 ? 'usuario encontrado' : 'usuarios encontrados'}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            {filteredUsers.length} {filteredUsers.length === 1 ? 'usuario encontrado' : 'usuarios encontrados'}
+            {filteredUsers.length > itemsPerPage && ` • Página ${pagination.current_page} de ${totalPages}`}
+          </div>
+          {!loading && filteredUsers.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(e.target.value)}
+                className={`pl-3 pr-10 py-1.5 min-w-[4.75rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer ${
+                  isDark
+                    ? 'bg-[#1a1a1a] border-gray-700 text-gray-100'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
+              >
+                {[5, 10, 20, 50].map((num) => (
+                  <option key={num} value={num}>
+                    {num}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -202,7 +242,7 @@ export default function Roles() {
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((user) => (
+                  paginatedUsers.map((user) => (
                     <tr key={user.id} className={`border-b transition-colors ${isDark ? 'border-gray-700 hover:bg-[#c8f135]/10' : 'border-gray-200 hover:bg-[#c8f135]/10'}`}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -260,6 +300,37 @@ export default function Roles() {
               </tbody>
             </table>
           </div>
+          {filteredUsers.length > itemsPerPage && (
+            <div className={`flex justify-center items-center gap-2 p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <button
+                type="button"
+                onClick={() => setPagination((prev) => ({ ...prev, current_page: prev.current_page - 1 }))}
+                disabled={pagination.current_page === 1}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isDark
+                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Anterior
+              </button>
+              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                Página {pagination.current_page} de {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPagination((prev) => ({ ...prev, current_page: prev.current_page + 1 }))}
+                disabled={pagination.current_page === totalPages}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isDark
+                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
-import { useContext, useState, useEffect } from 'react';
+import { useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { ThemeContext } from './ThemeContext';
 import { icons } from './icons';
@@ -8,13 +9,18 @@ import Roles from './Roles';
 import Auditoria from './Auditoria';
 import CustomFieldsManager from './CustomFieldsManager';
 import DynamicEntity from './DynamicEntity';
+import LandingSection from './LandingSection';
 import MenuOrder from './MenuOrder';
 import StatsManager from './StatsManager';
+import Respaldos from './Respaldos';
 // import BaseDatos from './BaseDatos';
 import UserCard from './UserCard';
+import DashboardTimelineChart from './DashboardTimelineChart';
+import StatCardSparkline, { sameId } from './StatCardSparkline';
 import { API_URL } from './config';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { user, canAccess } = useContext(AuthContext);
   const { theme } = useContext(ThemeContext);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -48,7 +54,7 @@ export default function Dashboard() {
   // Cerrar menús expandidos cuando se selecciona un menú diferente
   useEffect(() => {
     // Si el menú activo no es un submenú de 'acceso', cerrar el menú acceso
-    const accesoSubmenus = ['users', 'roles', 'auditoria', 'menu-order', 'stats-manager'];
+    const accesoSubmenus = ['users', 'roles', 'auditoria', 'menu-order', 'stats-manager', 'respaldos'];
     if (!accesoSubmenus.includes(activeMenu)) {
       setExpandedMenu((prev) => prev === 'acceso' ? null : prev);
     }
@@ -123,27 +129,97 @@ export default function Dashboard() {
 
   // Cargar estadísticas dinámicas configuradas
   const [dynamicStats, setDynamicStats] = useState([]);
+  const [timelineDays, setTimelineDays] = useState(30);
+  const [timelineSeries, setTimelineSeries] = useState([]);
+  /** Gráfico grande: oculto hasta que el usuario pulse una tarjeta con mini gráfico */
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  /** null = en el gráfico grande se muestran todas las series; número = solo esa estadística */
+  const [timelineFocusId, setTimelineFocusId] = useState(null);
+  const timelineSectionRef = useRef(null);
+
+  // Función para refrescar estadísticas - expuesta para que otros componentes la usen
+  const refreshStats = useCallback(async () => {
+    if (!user) {
+      setDynamicStats([]);
+      setTimelineSeries([]);
+      setLoadingStats(false);
+      return;
+    }
+    try {
+      setLoadingStats(true);
+      const headers = {
+        Authorization: `Bearer ${localStorage.getItem('session_token')}`,
+      };
+      const [statsRes, tlRes] = await Promise.all([
+        fetch(`${API_URL}/stats/values`, { headers }),
+        fetch(`${API_URL}/stats/timeline?days=${timelineDays}`, { headers }),
+      ]);
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          setDynamicStats(statsData.stats || []);
+        }
+      }
+      if (tlRes.ok) {
+        const tlData = await tlRes.json();
+        if (tlData.success) {
+          setTimelineSeries(tlData.series || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error al cargar estadísticas:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [user, timelineDays]);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Cargar estadísticas dinámicas
-        const statsRes = await fetch(`${API_URL}/stats/values`);
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          if (statsData.success) {
-            setDynamicStats(statsData.stats || []);
-          }
-        }
-      } catch (error) {
-        console.error('Error al cargar estadísticas:', error);
-      } finally {
-        setLoadingStats(false);
-      }
-    };
+    refreshStats();
+  }, [refreshStats, activeMenu]);
 
-    fetchStats();
-  }, [user]);
+  useEffect(() => {
+    if (timelineSeries.length === 0) {
+      setTimelineOpen(false);
+      setTimelineFocusId(null);
+    }
+  }, [timelineSeries.length]);
+
+  useEffect(() => {
+    if (!timelineOpen) return;
+    const id = requestAnimationFrame(() => {
+      timelineSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [timelineOpen, timelineFocusId, timelineDays]);
+
+  const openTimelineForStat = (statId) => {
+    const hasSeries = timelineSeries.some((s) => sameId(s.id, statId));
+    if (!hasSeries) return;
+
+    if (timelineOpen && sameId(timelineFocusId, statId)) {
+      closeTimelinePanel();
+      return;
+    }
+
+    setTimelineFocusId(statId);
+    setTimelineOpen(true);
+  };
+
+  const closeTimelinePanel = () => {
+    setTimelineOpen(false);
+    setTimelineFocusId(null);
+  };
+
+  const showAllTimelineSeries = () => {
+    setTimelineFocusId(null);
+  };
+
+  const displayedTimelineSeries =
+    timelineOpen && timelineSeries.length > 0
+      ? timelineFocusId != null
+        ? timelineSeries.filter((s) => sameId(s.id, timelineFocusId))
+        : timelineSeries
+      : [];
 
 
   const isDark = theme === 'dark';
@@ -163,10 +239,16 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setActiveMenu('dashboard');
+                navigate('/dashboard');
+              }}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
               <LucideIcons.Layers className="w-8 h-8 text-[#c8f135]" />
               <span className="font-semibold text-gray-100">CMS APP</span>
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
@@ -297,6 +379,20 @@ export default function Dashboard() {
                           {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Gestión de Estadísticas</span>}
                         </button>
                       )}
+                      {(user?.role === 'desarrollador' || user?.role === 'administrador') && (
+                        <button
+                          onClick={() => setActiveMenu('respaldos')}
+                          className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
+                            activeMenu === 'respaldos'
+                              ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
+                              : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                          }`}
+                          style={{ transitionDelay: '200ms' }}
+                        >
+                          <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
+                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Reportes</span>}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -415,7 +511,6 @@ export default function Dashboard() {
                     </span>
                   )}
                 </div>
-                <p className={`mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Aquí está tu inicio</p>
               </div>
 
               {/* Stats Cards - Dinámicas */}
@@ -447,13 +542,24 @@ export default function Dashboard() {
                       .split('-')
                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                       .join('')] || LucideIcons.BarChart;
-                    return (
-                      <div
-                        key={stat.id}
-                        className={`rounded-lg shadow-lg p-6 border ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
+                    const seriesData = timelineSeries.find((s) => sameId(s.id, stat.id));
+                    const hasSparkline = !!seriesData?.points?.length;
+                    const isFocused = timelineOpen && timelineFocusId != null && sameId(timelineFocusId, stat.id);
+
+                    const cardClass = `rounded-lg shadow-lg p-6 border ${
+                      isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'
+                    } ${
+                      hasSparkline
+                        ? `cursor-pointer transition hover:border-[#c8f135]/45 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c8f135]/60 ${
+                            isFocused ? 'ring-2 ring-[#c8f135]/70 border-[#c8f135]/40' : ''
+                          }`
+                        : ''
+                    }`;
+
+                    const inner = (
+                      <>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
                             <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                               {stat.label}
                             </p>
@@ -461,13 +567,72 @@ export default function Dashboard() {
                               {stat.value}
                             </p>
                           </div>
-                          <span className="text-4xl text-[#c8f135] flex items-center justify-center">
+                          <span className="text-4xl text-[#c8f135] flex shrink-0 items-center justify-center">
                             <IconComponent className="w-10 h-10" />
                           </span>
                         </div>
+                        {hasSparkline && (
+                          <>
+                            <StatCardSparkline points={seriesData.points} />
+                            <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+                              Tocá la tarjeta para ver el gráfico completo
+                            </p>
+                          </>
+                        )}
+                      </>
+                    );
+
+                    if (hasSparkline) {
+                      return (
+                        <button
+                          key={stat.id}
+                          type="button"
+                          className={`${cardClass} w-full text-left`}
+                          onClick={() => openTimelineForStat(stat.id)}
+                        >
+                          {inner}
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <div key={stat.id} className={cardClass}>
+                        {inner}
                       </div>
                     );
                   })
+                )}
+              </div>
+
+              {!loadingStats &&
+                dynamicStats.length > 0 &&
+                timelineSeries.length === 0 &&
+                (user?.role === 'desarrollador' || user?.role === 'administrador') && (
+                  <p className={`text-sm mb-4 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+                    Podés activar <span className="text-[#c8f135] font-medium">Mostrar evolución en el dashboard</span> al
+                    editar una estadística en Gestión de estadísticas para ver el gráfico de líneas.
+                  </p>
+                )}
+
+              {!loadingStats && timelineSeries.length > 0 && !timelineOpen && (
+                <p className={`text-sm mb-4 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+                  Las tarjetas con mini gráfico verde son interactivas:{' '}
+                  <span className="text-[#c8f135] font-medium">tocá una</span> para abrir la evolución detallada.
+                </p>
+              )}
+
+              <div ref={timelineSectionRef}>
+                {timelineOpen && displayedTimelineSeries.length > 0 && (
+                  <DashboardTimelineChart
+                    series={displayedTimelineSeries}
+                    days={timelineDays}
+                    onDaysChange={setTimelineDays}
+                    isDark={isDark}
+                    loading={loadingStats}
+                    onClose={closeTimelinePanel}
+                    onShowAll={timelineSeries.length > 1 ? showAllTimelineSeries : undefined}
+                    showShowAll={timelineFocusId != null && timelineSeries.length > 1}
+                  />
                 )}
               </div>
 
@@ -486,12 +651,27 @@ export default function Dashboard() {
               onModuleCreated={fetchDynamicMenus}
             />
             ) : activeMenu === 'stats-manager' ? (
-            <StatsManager />
+            <StatsManager onStatsChanged={refreshStats} />
+            ) : activeMenu === 'respaldos' ? (
+            <Respaldos />
             ) : activeMenu.startsWith('dynamic-') ? (() => {
               const entityType = activeEntityType || entityTypes.find(et => et.slug === activeMenu.replace('dynamic-', ''));
               if (!entityType) {
                 return <div className="p-6">EntityType no encontrado</div>;
               }
+              // Si es una sección landing, renderizar con LandingSection
+              if (entityType.type === 'landing') {
+                return (
+                  <LandingSection
+                    section={entityType}
+                    onBack={() => {
+                      setActiveMenu('dashboard');
+                      setActiveEntityType(null);
+                    }}
+                  />
+                );
+              }
+              // Si es un formulario normal, renderizar con DynamicEntity
               return (
                 <DynamicEntity
                   entityType={entityType}
@@ -499,6 +679,7 @@ export default function Dashboard() {
                     setActiveMenu('dashboard');
                     setActiveEntityType(null);
                   }}
+                  onRecordChanged={refreshStats}
                 />
               );
             })() : (

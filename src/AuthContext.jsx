@@ -167,11 +167,29 @@ export function AuthProvider({ children }) {
     return false;
   };
 
-  const logout = () => {
-    setUser(null);
-    setError(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('activeMenu');
+  const logout = async () => {
+    try {
+      // Llamar al backend para registrar el logout
+      const response = await fetch(`${API_URL}/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${JSON.parse(localStorage.getItem('user'))?.session_token}`,
+        },
+      });
+
+      // No mostrar notificación al usuario, solo limpiar estado local
+      setUser(null);
+      setError(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('activeMenu');
+    } catch (err) {
+      // Si hay error, igual limpiar estado local
+      setUser(null);
+      setError(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('activeMenu');
+    }
   };
 
   return (

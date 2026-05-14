@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { ThemeContext } from './ThemeContext';
 import { API_URL } from './config';
 
@@ -11,18 +11,21 @@ export default function Auditoria() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroAccion, setFiltroAccion] = useState('');
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const itemsPerPageRef = useRef(5);
   const [pagination, setPagination] = useState({
     current_page: 1,
     last_page: 1,
     total: 0,
   });
 
-  // Cargar auditoría
-  const loadAuditoria = async (page = 1) => {
+  const loadAuditoria = useCallback(async (page = 1, perPageOverride = null) => {
     try {
       setLoading(true);
+      const perPage = perPageOverride != null ? perPageOverride : itemsPerPageRef.current;
       const params = new URLSearchParams();
-      params.append('page', page);
+      params.append('page', String(page));
+      params.append('per_page', String(perPage));
       if (searchTerm) params.append('search', searchTerm);
       if (filtroAccion) params.append('accion', filtroAccion);
 
@@ -47,24 +50,28 @@ export default function Auditoria() {
         setError(data.message || 'Error al cargar auditoría');
       }
     } catch (err) {
+      console.error('Error en loadAuditoria:', err);
       setError('Error al cargar auditoría');
-      console.error(err);
     } finally {
       setLoading(false);
     }
+  }, [searchTerm, filtroAccion]);
+
+  const handleItemsPerPageChange = (value) => {
+    const n = parseInt(value, 10);
+    if (Number.isNaN(n) || n < 1) return;
+    itemsPerPageRef.current = n;
+    setItemsPerPage(n);
+    loadAuditoria(1, n);
   };
 
   useEffect(() => {
-    loadAuditoria();
-  }, []);
-
-  // Buscar al cambiar filtros
-  useEffect(() => {
+    const delay = searchTerm === '' && filtroAccion === '' ? 0 : 300;
     const timer = setTimeout(() => {
       loadAuditoria(1);
-    }, 300);
+    }, delay);
     return () => clearTimeout(timer);
-  }, [searchTerm, filtroAccion]);
+  }, [searchTerm, filtroAccion, loadAuditoria]);
 
   // Formatear fecha
   const formatDate = (dateString) => {
@@ -119,6 +126,7 @@ export default function Auditoria() {
     }
   };
 
+  
   return (
     <div className={`p-6 min-h-screen ${isDark ? 'bg-[#0f0f0f]' : 'bg-gray-100'}`}>
       {/* Header */}
@@ -134,6 +142,7 @@ export default function Auditoria() {
         </div>
       )}
 
+      
       {/* Filtros */}
       <div className={`mb-4 p-4 rounded-lg border ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="flex flex-wrap gap-4">
@@ -167,8 +176,31 @@ export default function Auditoria() {
             </select>
           </div>
         </div>
-        <div className={`mt-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-          {pagination.total} {pagination.total === 1 ? 'registro' : 'registros'} encontrados
+        <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+          <div>
+            {pagination.total} {pagination.total === 1 ? 'registro' : 'registros'} encontrados
+            {pagination.last_page > 1 && ` • Página ${pagination.current_page} de ${pagination.last_page}`}
+          </div>
+          {!loading && pagination.total > 0 && (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(e.target.value)}
+                className={`pl-3 pr-10 py-1.5 min-w-[4.75rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer ${
+                  isDark
+                    ? 'bg-[#1a1a1a] border-gray-700 text-gray-100'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
+              >
+                {[5, 10, 20, 50].map((num) => (
+                  <option key={num} value={num}>
+                    {num}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -191,7 +223,7 @@ export default function Auditoria() {
                   <th className={`px-4 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Acción</th>
                   <th className={`px-4 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Entidad</th>
                   <th className={`px-4 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>ID</th>
-                  <th className={`px-4 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>IP</th>
+                  <th className={`px-4 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Dirección IP</th>
                 </tr>
               </thead>
               <tbody>
@@ -209,7 +241,21 @@ export default function Auditoria() {
                       </td>
                       <td className={`px-4 py-3 text-sm ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
                         <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isDark ? 'bg-[#c8f135] text-black' : 'bg-[#8ba328] text-white'}`}>
+                          {registro.user?.profile_photo ? (
+                            <img 
+                              src={`${API_URL.replace('/api', '')}/storage/profile_photos/${registro.user.profile_photo}`}
+                              alt={registro.user_name || 'Usuario'}
+                              className="w-6 h-6 rounded-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                e.target.nextSibling.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          <div 
+                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isDark ? 'bg-[#c8f135] text-black' : 'bg-[#8ba328] text-white'}`}
+                            style={{ display: registro.user?.profile_photo ? 'none' : 'flex' }}
+                          >
                             {(registro.user_name || 'S').charAt(0).toUpperCase()}
                           </div>
                           <span>{registro.user_name || 'Sistema'}</span>
@@ -224,8 +270,64 @@ export default function Auditoria() {
                       <td className={`px-4 py-3 text-sm capitalize ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
                         {registro.entidad.replace('_', ' ')}
                       </td>
-                      <td className={`px-4 py-3 text-sm font-mono ${isDark ? 'text-[#c8f135]' : 'text-[#8ba328]'}`}>
-                        #{registro.entidad_id}
+                      <td className={`px-4 py-3 text-sm ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>
+                        {(registro.datos_nuevos || registro.datos_anteriores) ? (
+                          <div className="space-y-1 text-xs">
+                            <div className="font-mono text-[#c8f135] mb-1">
+                              ID: #{registro.entidad_id}
+                            </div>
+                            {/* Si es usuario modificado o eliminado, mostrar el nombre del usuario afectado */}
+                            {(registro.entidad === 'usuario' && (registro.accion === 'editar' || registro.accion === 'eliminar')) ? (
+                              <div className="text-blue-600">
+                                <span className="font-medium">Usuario:</span> {
+                                  (registro.datos_nuevos && registro.datos_nuevos.name) || 
+                                  (registro.datos_anteriores && registro.datos_anteriores.name) || 
+                                  'Desconocido'
+                                }
+                              </div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.menu_name) || (registro.datos_anteriores && registro.datos_anteriores.menu_name) ? (
+                              <div><span className="font-medium">Menú:</span> <span className="text-[#c8f135]">{(registro.datos_nuevos && registro.datos_nuevos.menu_name) || (registro.datos_anteriores && registro.datos_anteriores.menu_name)}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.form_title) || (registro.datos_anteriores && registro.datos_anteriores.form_title) ? (
+                              <div><span className="font-medium">Formulario:</span> <span className="text-[#c8f135]">{(registro.datos_nuevos && registro.datos_nuevos.form_title) || (registro.datos_anteriores && registro.datos_anteriores.form_title)}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.label) || (registro.datos_anteriores && registro.datos_anteriores.label) ? (
+                              <div><span className="font-medium">Estadística:</span> <span className="text-[#c8f135]">{(registro.datos_nuevos && registro.datos_nuevos.label) || (registro.datos_anteriores && registro.datos_anteriores.label)}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.entity_type) || (registro.datos_anteriores && registro.datos_anteriores.entity_type) ? (
+                              <div><span className="font-medium">Entidad:</span> <span className="text-[#c8f135]">{(registro.datos_nuevos && registro.datos_nuevos.entity_type) || (registro.datos_anteriores && registro.datos_anteriores.entity_type)}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.fields_count !== null && registro.datos_nuevos.fields_count > 0) ? (
+                              <div><span className="font-medium">Campos:</span> <span className="text-[#c8f135]">{registro.datos_nuevos.fields_count}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.type) || (registro.datos_anteriores && registro.datos_anteriores.type) ? (
+                              <div><span className="font-medium">Tipo:</span> <span className="text-[#c8f135]">{(registro.datos_nuevos && registro.datos_nuevos.type) || (registro.datos_anteriores && registro.datos_anteriores.type)}</span></div>
+                            ) : null}
+                            {(registro.datos_nuevos && registro.datos_nuevos.has_submenu) || (registro.datos_anteriores && registro.datos_anteriores.has_submenu) ? (
+                              <div className="text-blue-600"><span className="font-medium">Contenedor padre</span> con submenús</div>
+                            ) : null}
+                            {registro.accion === 'eliminar' ? (
+                              <div className="text-red-600"><span className="font-medium">Eliminado</span></div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="space-y-1 text-xs">
+                            <div className="font-mono text-[#c8f135]">
+                              ID: #{registro.entidad_id}
+                            </div>
+                            {/* Si es sesión, mostrar el usuario afectado */}
+                            {registro.entidad === 'sesion' ? (
+                              <div className="text-blue-600">
+                                <span className="font-medium">Usuario:</span> {
+                                  (registro.datos_nuevos && registro.datos_nuevos.username) || 
+                                  (registro.datos_anteriores && registro.datos_anteriores.username) || 
+                                  'Sistema'
+                                }
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className={`px-4 py-3 text-sm font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                         {registro.ip_address || '-'}
