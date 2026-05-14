@@ -2,7 +2,7 @@ import { useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { ThemeContext } from './ThemeContext';
-import { icons } from './icons';
+import { icons } from './icons'; // eslint-disable-line no-unused-vars
 import * as LucideIcons from 'lucide-react';
 import Users from './Users';
 import Roles from './Roles';
