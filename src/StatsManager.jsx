@@ -18,6 +18,9 @@ export default function StatsManager({ onStatsChanged }) {
   const [loadingFields, setLoadingFields] = useState(false);
   const [loadingValues, setLoadingValues] = useState(false);
   const [success, setSuccess] = useState('');
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Estado para formulario
   const [showForm, setShowForm] = useState(false);
@@ -25,11 +28,15 @@ export default function StatsManager({ onStatsChanged }) {
   const [formData, setFormData] = useState({
     label: '',
     entity_type: '',
+    type: 'count',
+    display_fields: [],
+    limit: 4,
+    group_by: '',
     icon: 'bar-chart',
     order: 0,
     active: true,
     show_timeline: false,
-    filters: [], // Nuevo campo para filtros
+    filters: [],
   });
 
   // Estado para drag and drop
@@ -305,6 +312,10 @@ export default function StatsManager({ onStatsChanged }) {
         setFormData({
           label: '',
           entity_type: '',
+          type: 'count',
+          display_fields: [],
+          limit: 4,
+          group_by: '',
           icon: 'bar-chart',
           order: 0,
           active: true,
@@ -326,10 +337,13 @@ export default function StatsManager({ onStatsChanged }) {
 
   // Eliminar estadística
   const handleDelete = async (id) => {
-    if (!confirm('¿Estás seguro de eliminar esta estadística?')) return;
+    setDeletingId(id);
+    setShowDeleteModal(true);
+  };
 
+  const confirmDelete = async () => {
     try {
-      const response = await fetch(`${API_URL}/stats/${id}`, {
+      const response = await fetch(`${API_URL}/stats/${deletingId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
@@ -341,7 +355,6 @@ export default function StatsManager({ onStatsChanged }) {
       if (data.success) {
         setSuccess('Estadística eliminada correctamente');
         loadStats();
-        // Notificar cambios para refrescar estadísticas en dashboard
         if (onStatsChanged) onStatsChanged();
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -349,6 +362,9 @@ export default function StatsManager({ onStatsChanged }) {
       }
     } catch {
       setError('Error al eliminar la estadística');
+    } finally {
+      setShowDeleteModal(false);
+      setDeletingId(null);
     }
   };
 
@@ -360,6 +376,10 @@ export default function StatsManager({ onStatsChanged }) {
     setFormData({
       label: stat.label,
       entity_type: stat.entity_type,
+      type: stat.type || 'count',
+      display_fields: stat.display_fields || [],
+      limit: stat.limit || 4,
+      group_by: stat.group_by || '',
       icon: stat.icon,
       order: stat.order,
       active: stat.active,
@@ -370,7 +390,24 @@ export default function StatsManager({ onStatsChanged }) {
     // Cargar campos para la entidad seleccionada
     if (stat.entity_type) {
       console.log('Cargando campos para la entidad en edición:', stat.entity_type);
-      loadEntityFields(stat.entity_type);
+      // Intentar desde stats endpoint primero (incluye entidades no dinámicas)
+      const selected = entityTypes.find(t => t.value === stat.entity_type);
+      if (selected?.fields && selected.fields.length > 0) {
+        const fields = selected.fields.map(f =>
+          typeof f === 'string' ? { name: f, label: f } : f
+        );
+        setAvailableFields(fields);
+      } else {
+        loadEntityFields(stat.entity_type);
+      }
+      // Cargar valores para cada filtro existente
+      if (stat.filters && stat.filters.length > 0) {
+        stat.filters.forEach(filter => {
+          if (filter.field) {
+            loadFieldValues(stat.entity_type, filter.field);
+          }
+        });
+      }
     }
   };
 
@@ -456,18 +493,28 @@ export default function StatsManager({ onStatsChanged }) {
         </div>
         <button
           onClick={() => {
-            setShowForm(!showForm);
             if (showForm) {
+              setShowForm(false);
               setEditingId(null);
               setFormData({
                 label: '',
                 entity_type: '',
+                type: 'count',
+                display_fields: [],
+                limit: 4,
+                group_by: '',
                 icon: 'bar-chart',
                 order: stats.length,
                 active: true,
                 show_timeline: false,
                 filters: [],
               });
+            } else {
+              if (stats.length >= 8) {
+                setShowLimitModal(true);
+              } else {
+                setShowForm(true);
+              }
             }
           }}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -527,8 +574,17 @@ export default function StatsManager({ onStatsChanged }) {
                 onChange={(e) => {
                   const newEntityType = e.target.value;
                   console.log('Cambiando entity_type de', formData.entity_type, 'a', newEntityType);
-                  setFormData({ ...formData, entity_type: newEntityType, filters: [] });
-                  loadEntityFields(newEntityType);
+                  setFormData({ ...formData, entity_type: newEntityType, filters: [], display_fields: [] });
+                  // Extraer campos desde el stats endpoint (incluye entidades no dinámicas)
+                  const selected = entityTypes.find(t => t.value === newEntityType);
+                  if (selected?.fields && selected.fields.length > 0) {
+                    const fields = selected.fields.map(f =>
+                      typeof f === 'string' ? { name: f, label: f } : f
+                    );
+                    setAvailableFields(fields);
+                  } else {
+                    loadEntityFields(newEntityType);
+                  }
                   console.log('Después de setFormData, formData.entity_type debería ser:', newEntityType);
                 }}
                 disabled={loadingEntities}
@@ -551,11 +607,123 @@ export default function StatsManager({ onStatsChanged }) {
             </div>
           </div>
 
+          {/* Tipo de estadística */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                Tipo de estadística:
+              </label>
+              <select
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none ${
+                  isDark
+                    ? 'bg-[#0f0f0f] border-gray-700 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
+              >
+                <option value="count">Conteo</option>
+                <option value="latest">Últimos registros</option>
+                <option value="pie">Pastel</option>
+                <option value="bar">Barras</option>
+              </select>
+            </div>
+
+            {formData.type === 'latest' && (
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Cantidad de registros:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={formData.limit}
+                  onChange={(e) => setFormData({ ...formData, limit: parseInt(e.target.value) || 4 })}
+                  className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none ${
+                    isDark
+                      ? 'bg-[#0f0f0f] border-gray-700 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                />
+              </div>
+            )}
+
+            {(formData.type === 'pie' || formData.type === 'bar') && (
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Agrupar por:
+                </label>
+                <select
+                  value={formData.group_by}
+                  onChange={(e) => setFormData({ ...formData, group_by: e.target.value })}
+                  className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none ${
+                    isDark
+                      ? 'bg-[#0f0f0f] border-gray-700 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  } ${availableFields.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={availableFields.length === 0}
+                >
+                  <option value="">Seleccionar campo...</option>
+                  {availableFields.map((field) => (
+                    <option key={field.name || field} value={field.name || field}>
+                      {field.label || field}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Campos a mostrar (solo para tipo latest) */}
+          {formData.type === 'latest' && (
+            <div className="mt-4">
+              <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                Campos a mostrar:
+              </label>
+              <div className={`rounded-lg border p-4 ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
+                <div className="flex flex-wrap gap-3">
+                  {availableFields.length === 0 ? (
+                    <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                      Selecciona una entidad primero
+                    </p>
+                  ) : (
+                    availableFields.map((field) => (
+                      <label key={field.name} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.display_fields.includes(field.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                display_fields: [...formData.display_fields, field.name],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                display_fields: formData.display_fields.filter(f => f !== field.name),
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-gray-600 text-[#c8f135] focus:ring-[#c8f135]"
+                        />
+                        <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          {field.label || field.name}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Campo de filtros */}
           {(
             <div className="mt-4">
               <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Filtros de conteo:
+                {formData.type === 'latest' ? 'Filtros:' : 'Filtros de conteo:'}
               </label>
               <div className={`rounded-lg border p-4 ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
                 <div className="space-y-3">
@@ -798,6 +966,10 @@ export default function StatsManager({ onStatsChanged }) {
                 setFormData({
                   label: '',
                   entity_type: '',
+                  type: 'count',
+                  display_fields: [],
+                  limit: 4,
+                  group_by: '',
                   icon: 'bar-chart',
                   order: stats.length,
                   active: true,
@@ -1013,6 +1185,74 @@ export default function StatsManager({ onStatsChanged }) {
           </div>
           <div className={`mt-4 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'} text-center`}>
             💡 Tip: Arrastra y suelta las tarjetas para cambiar el orden de las estadísticas en el dashboard
+          </div>
+        </div>
+      )}
+
+      {/* Modal de límite alcanzado */}
+      {showLimitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in bg-black/50">
+          <div className={`rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transition-all duration-300 ease-out transform scale-100 ${
+            isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white'
+          }`}>
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Máximo de módulos alcanzado
+              </h3>
+              <p className={`text-sm mb-6 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                Solo puedes tener hasta 8 estadísticas activas. Elimina o desactiva una antes de agregar otra.
+              </p>
+              <button
+                onClick={() => setShowLimitModal(false)}
+                className="px-6 py-2 rounded-lg bg-[#c8f135] text-black font-medium hover:bg-[#d4f54d] transition-colors"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para eliminar */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in bg-black/50">
+          <div className={`rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transition-all duration-300 ease-out transform scale-100 ${
+            isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white'
+          }`}>
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Eliminar estadística
+              </h3>
+              <p className={`text-sm mb-6 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                ¿Estás seguro de eliminar esta estadística? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => { setShowDeleteModal(false); setDeletingId(null); }}
+                  className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                    isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-6 py-2 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

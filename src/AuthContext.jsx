@@ -96,6 +96,7 @@ export function AuthProvider({ children }) {
       const userData = {
         ...data.user,
         role: data.user.role || 'operador',
+        profile_photo: data.user.profile_photo || null,
         avatar: data.user.profile_photo 
           ? `${API_URL.replace('/api', '')}/storage/profile_photos/${data.user.profile_photo}`
           : getProfileImage(null, data.user.name),

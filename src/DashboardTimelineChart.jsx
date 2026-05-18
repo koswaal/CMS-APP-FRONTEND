@@ -42,6 +42,7 @@ export default function DashboardTimelineChart({
   onClose,
   onShowAll,
   showShowAll,
+  exiting,
 }) {
   if (!series?.length) {
     return null;
@@ -54,7 +55,7 @@ export default function DashboardTimelineChart({
 
   return (
     <div
-      className={`rounded-lg shadow-lg border p-6 mb-8 ${
+      className={`rounded-lg shadow-lg border p-6 mb-8 ${exiting ? 'animate-fade-out' : 'animate-fade-in'} ${
         isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'
       }`}
     >
@@ -155,6 +156,9 @@ export default function DashboardTimelineChart({
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 5 }}
+                  isAnimationActive={true}
+                  animationDuration={1200}
+                  animationEasing="ease-out"
                 />
               ))}
             </LineChart>

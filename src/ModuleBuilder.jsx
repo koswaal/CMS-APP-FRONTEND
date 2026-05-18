@@ -39,18 +39,19 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) 
     })),
   });
 
-  // Tipos de campo disponibles
-  const fieldTypes = [
-    { value: 'text', label: 'Texto' },
-    { value: 'number', label: 'Número' },
-    { value: 'email', label: 'Email' },
-    { value: 'date', label: 'Fecha' },
-    { value: 'boolean', label: 'Sí/No' },
-    { value: 'textarea', label: 'Texto largo' },
-    { value: 'select-entity', label: 'Select de otra entidad' },
-    { value: 'id', label: 'ID del registro' },
-    { value: 'correlativo', label: 'Número correlativo' },
-  ];
+// Tipos de campo disponibles
+const fieldTypes = [
+  { value: 'text', label: 'Texto' },
+  { value: 'number', label: 'Número' },
+  { value: 'email', label: 'Email' },
+  { value: 'date', label: 'Fecha' },
+  { value: 'boolean', label: 'Sí/No' },
+  { value: 'textarea', label: 'Texto largo' },
+  { value: 'image', label: 'Imagen' },
+  { value: 'select-entity', label: 'Select de otra entidad' },
+  { value: 'id', label: 'ID del registro' },
+  { value: 'correlativo', label: 'Número correlativo' },
+];
 
   // Cargar entidades disponibles para selects
   const [availableEntities, setAvailableEntities] = useState([]);
@@ -74,10 +75,10 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) 
     // Carpetas y archivos
     'folder-open', 'folder', 'folder-plus', 'folder-minus',
     'file-text', 'file', 'file-plus', 'file-minus', 'files',
-    'box', 'package', 'archive', 'database', 'save', 'download', 'upload',
+    'box', 'archive', 'database', 'save', 'download', 'upload',
     
     // Comunicación
-    'mail', 'inbox', 'send', 'message-circle', 'message-square', 'phone', 'smartphone', 'at-sign',
+    'mail', 'inbox', 'send', 'message-circle', 'message-square', 'phone', 'at-sign',
     
     // Documentos y escritura
     'clipboard', 'clipboard-list', 'clipboard-check', 'paperclip', 'pen-tool', 'edit',

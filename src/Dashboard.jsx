@@ -17,6 +17,9 @@ import Respaldos from './Respaldos';
 import UserCard from './UserCard';
 import DashboardTimelineChart from './DashboardTimelineChart';
 import StatCardSparkline, { sameId } from './StatCardSparkline';
+import StatCardLatest from './StatCardLatest';
+import StatCardPie from './StatCardPie';
+import StatCardBar from './StatCardBar';
 import { API_URL } from './config';
 
 export default function Dashboard() {
@@ -40,6 +43,23 @@ export default function Dashboard() {
   const [dynamicMenus, setDynamicMenus] = useState([]);
   const [expandedDynamicMenus, setExpandedDynamicMenus] = useState(new Set());
   const [activeEntityType, setActiveEntityType] = useState(null);
+
+  // Popup para submenús cuando el sidebar está colapsado
+  const [showSubmenuPopup, setShowSubmenuPopup] = useState(null);
+  const submenuPopupRef = useRef(null);
+
+  // Cerrar popup al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (submenuPopupRef.current && !submenuPopupRef.current.contains(event.target)) {
+        setShowSubmenuPopup(null);
+      }
+    };
+    if (showSubmenuPopup) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSubmenuPopup]);
 
   // Limpiar localStorage de navegación al cargar
   useEffect(() => {
@@ -135,6 +155,7 @@ export default function Dashboard() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   /** null = en el gráfico grande se muestran todas las series; número = solo esa estadística */
   const [timelineFocusId, setTimelineFocusId] = useState(null);
+  const [timelineExiting, setTimelineExiting] = useState(false);
   const timelineSectionRef = useRef(null);
 
   // Función para refrescar estadísticas - expuesta para que otros componentes la usen
@@ -179,8 +200,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (timelineSeries.length === 0) {
-      setTimelineOpen(false);
-      setTimelineFocusId(null);
+      closeTimelinePanel();
     }
   }, [timelineSeries.length]);
 
@@ -206,8 +226,12 @@ export default function Dashboard() {
   };
 
   const closeTimelinePanel = () => {
-    setTimelineOpen(false);
-    setTimelineFocusId(null);
+    setTimelineExiting(true);
+    setTimeout(() => {
+      setTimelineExiting(false);
+      setTimelineOpen(false);
+      setTimelineFocusId(null);
+    }, 250);
   };
 
   const showAllTimelineSeries = () => {
@@ -215,7 +239,7 @@ export default function Dashboard() {
   };
 
   const displayedTimelineSeries =
-    timelineOpen && timelineSeries.length > 0
+    (timelineOpen || timelineExiting) && timelineSeries.length > 0
       ? timelineFocusId != null
         ? timelineSeries.filter((s) => sameId(s.id, timelineFocusId))
         : timelineSeries
@@ -284,14 +308,27 @@ export default function Dashboard() {
           {(canAccess('users') || canAccess('roles') || user?.role === 'desarrollador' || user?.role === 'administrador') && (
             <div>
               <button
-                onClick={() => setExpandedMenu(expandedMenu === 'acceso' ? null : 'acceso')}
+                onClick={() => {
+                  if (sidebarOpen) {
+                    setExpandedMenu(expandedMenu === 'acceso' ? null : 'acceso');
+                  } else {
+                    const items = [];
+                    if (canAccess('users')) items.push({ key: 'users', label: 'Usuarios' });
+                    if (canAccess('roles')) items.push({ key: 'roles', label: 'Roles' });
+                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'auditoria', label: 'Auditoría' });
+                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'menu-order', label: 'Orden de menúes' });
+                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'stats-manager', label: 'Gestión de Estadísticas' });
+                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'respaldos', label: 'Reportes' });
+                    setShowSubmenuPopup({ name: 'Acceso', items });
+                  }
+                }}
                 className={`group w-full flex items-center gap-4 px-4 py-2 rounded-lg transition-all duration-200 ease-out transform hover:scale-[1.02] active:scale-[0.98] ${
                   expandedMenu === 'acceso'
                     ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-4 border-[#c8f135] shadow-[0_0_10px_rgba(200,241,53,0.1)]'
                     : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
                 }`}
               >
-                <span className="text-xl text-gray-100 transition-transform duration-200 group-hover:scale-110 w-5 flex items-center justify-center"><icons.users /></span>
+                <span className="text-xl text-gray-100 transition-transform duration-200 group-hover:scale-110 w-5 flex items-center justify-center"><LucideIcons.Shield /></span>
                 {sidebarOpen && (
                   <>
                     <span className="font-medium flex-1 text-left transition-all duration-200">Acceso</span>
@@ -412,17 +449,26 @@ export default function Dashboard() {
                     <div key={menu.slug}>
                       <button
                         onClick={() => {
-                          // Si tiene hijos, es un contenedor: solo expandir/colapsar
                           if (hasChildren) {
-                            setExpandedDynamicMenus((prev) => {
-                              const newSet = new Set(prev);
-                              if (newSet.has(menu.slug)) {
-                                newSet.delete(menu.slug);
-                              } else {
-                                newSet.add(menu.slug);
-                              }
-                              return newSet;
-                            });
+                            if (sidebarOpen) {
+                              setExpandedDynamicMenus((prev) => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(menu.slug)) {
+                                  newSet.delete(menu.slug);
+                                } else {
+                                  newSet.add(menu.slug);
+                                }
+                                return newSet;
+                              });
+                            } else {
+                              const items = children.map(child => ({
+                                key: `dynamic-${child.slug}`,
+                                label: child.name,
+                                icon: child.icon,
+                                entity: entityTypes.find((et) => et.slug === child.slug)
+                              }));
+                              setShowSubmenuPopup({ name: menu.name, items });
+                            }
                           } else {
                             // Menú sin hijos: navegar al formulario
                             const entity = entityTypes.find((et) => et.slug === menu.slug);
@@ -493,6 +539,48 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* Popup de submenús cuando el sidebar está colapsado */}
+        {showSubmenuPopup && (
+          <div
+            ref={submenuPopupRef}
+            className={`fixed z-50 top-20 ${
+              sidebarOpen ? 'left-64' : 'left-20'
+            } ml-2 rounded-xl shadow-xl border p-3 min-w-[200px] animate-fade-in ${
+              isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'
+            }`}
+          >
+            <div className="mb-2 px-2 pb-2 border-b border-gray-700/50">
+              <p className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                {showSubmenuPopup.name}
+              </p>
+            </div>
+            <div className="space-y-1">
+              {showSubmenuPopup.items.map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    if (item.entity) {
+                      setActiveEntityType(item.entity);
+                    }
+                    setActiveMenu(item.key);
+                    setShowSubmenuPopup(null);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                    activeMenu === item.key
+                      ? 'bg-[#c8f135]/10 text-[#c8f135]'
+                      : isDark
+                        ? 'text-gray-300 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                        : 'text-gray-700 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                  }`}
+                >
+                  {item.icon && <DynamicIcon name={item.icon} className="w-4 h-4" />}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* Main Content */}
@@ -538,6 +626,74 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   dynamicStats.map((stat) => {
+                    console.log('Stat:', stat.id, stat.label, 'type:', stat.type, 'data:', stat.data, 'hasData:', !!stat.data?.length);
+                    
+                    // Detect pie/bar by data structure if type is missing
+                    const isPieData = stat.data && stat.data.length > 0 && stat.data[0] && (stat.data[0].label || stat.data[0].name || stat.data[0].count !== undefined);
+                    const detectedType = stat.type || (isPieData ? 'pie' : 'count');
+                    
+                    if (detectedType === 'pie') {
+                      return (
+                        <StatCardPie
+                          key={stat.id}
+                          data={stat.data || []}
+                          label={stat.label}
+                          icon={stat.icon}
+                          total={stat.total}
+                        />
+                      );
+                    }
+                    if (detectedType === 'bar') {
+                      return (
+                        <StatCardBar
+                          key={stat.id}
+                          data={stat.data || []}
+                          label={stat.label}
+                          icon={stat.icon}
+                        />
+                      );
+                    }
+                    if (stat.type === 'latest') {
+                      const entityType = entityTypes.find(et => et.slug === stat.entity_type);
+                      const fieldLabels = {};
+                      const fieldDefs = {};
+                      if (entityType?.fields) {
+                        entityType.fields.forEach(f => {
+                          fieldLabels[f.name] = f.label || f.name;
+                          fieldDefs[f.name] = f;
+                        });
+                      }
+                      return (
+                        <StatCardLatest
+                          key={stat.id}
+                          records={stat.records}
+                          fields={stat.display_fields}
+                          fieldLabels={fieldLabels}
+                          fieldDefs={fieldDefs}
+                          label={stat.label}
+                          icon={stat.icon}
+                          entitySlug={stat.entity_type}
+                          canNavigate={!!entityTypes.find(et => et.slug === stat.entity_type)
+                            || !!dynamicMenus.find(m => m.slug === stat.entity_type)
+                            || ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'].includes(stat.entity_type)}
+                          onNavigate={(slug) => {
+                            const entity = entityTypes.find(et => et.slug === slug)
+                              || dynamicMenus.find(m => m.slug === slug);
+                            if (entity && entity.fields) {
+                              setActiveEntityType(entity);
+                            }
+                            const resolvedSlug = entity?.slug || slug;
+                            const knownMenus = ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'];
+                            if (!entity && knownMenus.includes(slug)) {
+                              setActiveMenu(slug);
+                            } else {
+                              setActiveMenu(`dynamic-${resolvedSlug}`);
+                            }
+                          }}
+                        />
+                      );
+                    }
+
                     const IconComponent = LucideIcons[stat.icon
                       .split('-')
                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -622,7 +778,7 @@ export default function Dashboard() {
               )}
 
               <div ref={timelineSectionRef}>
-                {timelineOpen && displayedTimelineSeries.length > 0 && (
+                {(timelineOpen || timelineExiting) && displayedTimelineSeries.length > 0 && (
                   <DashboardTimelineChart
                     series={displayedTimelineSeries}
                     days={timelineDays}
@@ -632,6 +788,7 @@ export default function Dashboard() {
                     onClose={closeTimelinePanel}
                     onShowAll={timelineSeries.length > 1 ? showAllTimelineSeries : undefined}
                     showShowAll={timelineFocusId != null && timelineSeries.length > 1}
+                    exiting={timelineExiting}
                   />
                 )}
               </div>

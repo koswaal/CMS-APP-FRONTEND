@@ -13,6 +13,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [formData, setFormData] = useState({});
+  const [previewUrls, setPreviewUrls] = useState({});
   const [pagination, setPagination] = useState({
     total: 0,
     per_page: 5,
@@ -290,6 +291,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
     setShowForm(false);
     setEditingRecord(null);
     setFormData({});
+    setPreviewUrls({});
   };
 
   // Cambiar cantidad de registros por página
@@ -345,25 +347,57 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
   // Guardar (crear o actualizar)
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+ 
     const url = editingRecord
       ? `${API_URL}/dynamic/${entityType.slug}/${editingRecord.id}`
       : `${API_URL}/dynamic/${entityType.slug}`;
-
+ 
     const method = editingRecord ? 'PUT' : 'POST';
 
+    // Detectar si hay campos de tipo image para usar FormData
+    const hasImageFields = entityType.fields?.some(field => field.type === 'image');
+    let body;
+    let headers = {
+      'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
+    };
+ 
+    if (hasImageFields) {
+      // Usar FormData para upload de archivos
+      const formDataBody = new FormData();
+      for (const key of Object.keys(formData)) {
+        const value = formData[key];
+        if (value instanceof File) {
+          // Archivo seleccionado para upload
+          formDataBody.append(key, value);
+        } else {
+          // Valores normales (texto, número, boolean, etc.)
+          formDataBody.append(key, value ?? '');
+        }
+      }
+      // Para actualización con FormData, Laravel necesita _method=PUT
+      if (editingRecord) {
+        formDataBody.append('_method', 'PUT');
+      }
+      body = formDataBody;
+      // No especificar Content-Type - el navegador lo pone automáticamente con boundary
+    } else {
+      // Flujo normal para campos sin archivos
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(formData);
+    }
+ 
     try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
-        },
-        body: JSON.stringify(formData),
-      });
-
+      const response = await fetch(
+        url,
+        {
+          method: hasImageFields ? 'POST' : method, // Siempre POST con FormData
+          headers,
+          body,
+        }
+      );
+ 
       const data = await response.json();
-
+ 
       if (data.success) {
         clearFormState();
         fetchRecords(pagination.current_page);
@@ -403,8 +437,36 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
       const option = options.find(opt => String(opt.id) === String(value));
       return option?.label || value;
     }
+
+    if (field.type === 'image') {
+      return (
+        <div className="relative group w-16 h-16">
+          <img
+            src={getImageUrl(value)}
+            alt=""
+            className="w-16 h-16 object-cover rounded-lg border border-gray-300/50 cursor-pointer transition-all group-hover:brightness-50"
+            onClick={() => window.open(getImageUrl(value), '_blank')}
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            onClick={() => window.open(getImageUrl(value), '_blank')}
+          >
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+        </div>
+      );
+    }
     
     return value;
+  };
+
+  // Construir URL completa para imágenes
+  const getImageUrl = (path) => {
+    if (!path) return '';
+    return path.startsWith('http') ? path : `${API_URL.replace('/api', '')}/${path.replace(/^\//, '')}`;
   };
 
   // Renderizar campo según tipo
@@ -478,22 +540,89 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
         );
       }
 
-      case 'date':
-        return (
-          <input
-            type="date"
-            value={value}
-            onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
-            required={field.required}
-            className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] outline-none ${
-              isDark
-                ? 'bg-[#0f0f0f] border-gray-700 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            }`}
-          />
-        );
-
-      case 'id':
+       case 'date':
+         return (
+           <input
+             type="date"
+             value={value}
+             onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+             required={field.required}
+             className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] outline-none ${
+               isDark
+                 ? 'bg-[#0f0f0f] border-gray-700 text-white'
+                 : 'bg-white border-gray-300 text-gray-900'
+             }`}
+           />
+         );
+ 
+       case 'image':
+         return (
+           <div className="space-y-2">
+             <input
+               type="file"
+               accept="image/*"
+               onChange={(e) => {
+                 const file = e.target.files[0];
+                 if (file) {
+                   setFormData(prev => ({ ...prev, [field.name]: file }));
+                   setPreviewUrls(prev => ({ ...prev, [field.name]: URL.createObjectURL(file) }));
+                 } else {
+                   setFormData(prev => ({ ...prev, [field.name]: '' }));
+                   setPreviewUrls(prev => ({ ...prev, [field.name]: null }));
+                 }
+               }}
+               className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] outline-none ${
+                 isDark
+                   ? 'bg-[#0f0f0f] border-gray-700'
+                   : 'bg-white border-gray-300'
+               }`}
+             />
+               {value && typeof value === 'string' && (
+                 <div className="relative group">
+                   <img
+                     src={getImageUrl(value)}
+                     alt="Imagen actual"
+                     className="max-w-full h-auto max-h-40 rounded border border-gray-300/50 cursor-pointer"
+                     onClick={() => window.open(getImageUrl(value), '_blank')}
+                   />
+                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                     <button
+                       type="button"
+                       onClick={() => window.open(getImageUrl(value), '_blank')}
+                       className="p-1.5 rounded bg-black/60 text-white hover:bg-black/80 transition-colors"
+                       title="Ver imagen"
+                     >
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                       </svg>
+                     </button>
+                     <a
+                       href={getImageUrl(value)}
+                       download
+                       className="p-1.5 rounded bg-black/60 text-white hover:bg-black/80 transition-colors"
+                       title="Descargar imagen"
+                     >
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                       </svg>
+                     </a>
+                   </div>
+                 </div>
+               )}
+              {previewUrls[field.name] && (
+                <div className="relative group">
+                  <img
+                    src={previewUrls[field.name]}
+                    alt="Vista previa"
+                    className="max-w-full h-auto rounded border border-[#c8f135]/50"
+                  />
+                </div>
+              )}
+           </div>
+         );
+ 
+       case 'id':
         return (
           <input
             type="text"

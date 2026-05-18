@@ -48,7 +48,7 @@ export default function UserCard() {
         password: '',
         password_confirmation: '',
       });
-      setPreviewFoto(user?.profile_photo ? `${API_URL.replace('/api', '')}/storage/profile_photos/${user.profile_photo}` : null);
+      setPreviewFoto(user?.avatar || null);
       setProfilePhoto(null);
     }
   }, [showProfileModal, user]);
@@ -169,7 +169,7 @@ export default function UserCard() {
         className="flex items-center gap-3 p-1 rounded-lg transition-colors hover:bg-[#c8f135]/10"
       >
         <img
-          src={getProfileImage(user?.profile_photo, user?.name || 'User', API_URL.replace('/api', ''))}
+          src={user?.avatar || getProfileImage(null, user?.name || 'User')}
           alt={user?.name}
           className="w-10 h-10 rounded-full object-cover border-2 border-[#c8f135] transition-transform hover:scale-105"
           onError={(e) => {
@@ -198,7 +198,7 @@ export default function UserCard() {
           <div className={`p-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className="flex items-center gap-3">
               <img
-                src={getProfileImage(user?.profile_photo, user?.name || 'User', API_URL.replace('/api', ''))}
+                src={user?.avatar || getProfileImage(null, user?.name || 'User')}
                 alt={user?.name}
                 className="w-12 h-12 rounded-full object-cover border-2 border-[#c8f135]"
                 onError={(e) => {

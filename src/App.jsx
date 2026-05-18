@@ -4,7 +4,6 @@ import { ThemeProvider } from './ThemeContext';
 import { useContext } from 'react';
 import Login from './login';
 import Dashboard from './Dashboard';
-import Footer from './Footer';
 
 // Componente para proteger rutas
 function ProtectedRoute({ children }) {
@@ -51,7 +50,6 @@ export default function App() {
             <div className="flex-grow">
               <AppRoutes />
             </div>
-            <Footer />
           </div>
         </BrowserRouter>
       </AuthProvider>

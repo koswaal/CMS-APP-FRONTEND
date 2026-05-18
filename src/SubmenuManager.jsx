@@ -47,10 +47,10 @@ export default function SubmenuManager({ isOpen, onClose, containerId, container
     // Carpetas y archivos
     'folder-open', 'folder', 'folder-plus', 'folder-minus',
     'file-text', 'file', 'file-plus', 'file-minus', 'files',
-    'box', 'package', 'archive', 'database', 'save', 'download', 'upload',
+    'box', 'archive', 'database', 'save', 'download', 'upload',
     
     // Comunicación
-    'mail', 'inbox', 'send', 'message-circle', 'message-square', 'phone', 'smartphone', 'at-sign',
+    'mail', 'inbox', 'send', 'message-circle', 'message-square', 'phone', 'at-sign',
     
     // Documentos y escritura
     'clipboard', 'clipboard-list', 'clipboard-check', 'paperclip', 'pen-tool', 'edit',
