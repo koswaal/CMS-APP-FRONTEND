@@ -13,7 +13,8 @@ import LandingSection from './LandingSection';
 import MenuOrder from './MenuOrder';
 import StatsManager from './StatsManager';
 import Respaldos from './Respaldos';
-// import BaseDatos from './BaseDatos';
+import DashboardModule from './DashboardModule';
+import DashboardModuleBuilder from './DashboardModuleBuilder';
 import UserCard from './UserCard';
 import DashboardTimelineChart from './DashboardTimelineChart';
 import StatCardSparkline, { sameId } from './StatCardSparkline';
@@ -43,6 +44,7 @@ export default function Dashboard() {
   const [dynamicMenus, setDynamicMenus] = useState([]);
   const [expandedDynamicMenus, setExpandedDynamicMenus] = useState(new Set());
   const [activeEntityType, setActiveEntityType] = useState(null);
+  const [editingDashboard, setEditingDashboard] = useState(null);
 
   // Popup para submenús cuando el sidebar está colapsado
   const [showSubmenuPopup, setShowSubmenuPopup] = useState(null);
@@ -157,6 +159,8 @@ export default function Dashboard() {
   const [timelineFocusId, setTimelineFocusId] = useState(null);
   const [timelineExiting, setTimelineExiting] = useState(false);
   const timelineSectionRef = useRef(null);
+  const [expandedStat, setExpandedStat] = useState(null);
+  const [expandedExiting, setExpandedExiting] = useState(false);
 
   // Función para refrescar estadísticas - expuesta para que otros componentes la usen
   const refreshStats = useCallback(async () => {
@@ -216,6 +220,11 @@ export default function Dashboard() {
     const hasSeries = timelineSeries.some((s) => sameId(s.id, statId));
     if (!hasSeries) return;
 
+    // Close any expanded panel when opening a timeline
+    if (expandedStat) {
+      closeExpandedPanel();
+    }
+
     if (timelineOpen && sameId(timelineFocusId, statId)) {
       closeTimelinePanel();
       return;
@@ -231,6 +240,43 @@ export default function Dashboard() {
       setTimelineExiting(false);
       setTimelineOpen(false);
       setTimelineFocusId(null);
+    }, 250);
+  };
+
+  // Expandir panel genérico para otros tipos de estadística (pie, bar, latest)
+  const detectStatType = (stat) => {
+    const isPieData = stat.data && stat.data.length > 0 && stat.data[0] && (stat.data[0].label || stat.data[0].name || stat.data[0].count !== undefined);
+    return stat.type || (isPieData ? 'pie' : 'count');
+  };
+
+  const openExpandedForStat = (stat) => {
+    const type = detectStatType(stat);
+    // Si la estadística tiene timeline, preferir abrir timeline
+    const hasSeries = timelineSeries.some((s) => sameId(s.id, stat.id));
+    if (hasSeries) {
+      openTimelineForStat(stat.id);
+      return;
+    }
+
+    // Close timeline if open
+    if (timelineOpen) {
+      closeTimelinePanel();
+    }
+
+    if (expandedStat && sameId(expandedStat.id, stat.id)) {
+      closeExpandedPanel();
+      return;
+    }
+
+    // Replace any existing expanded stat with the new one (only one open at a time)
+    setExpandedStat({ ...stat, _detectedType: type });
+  };
+
+  const closeExpandedPanel = () => {
+    setExpandedExiting(true);
+    setTimeout(() => {
+      setExpandedExiting(false);
+      setExpandedStat(null);
     }, 250);
   };
 
@@ -633,24 +679,30 @@ export default function Dashboard() {
                     const detectedType = stat.type || (isPieData ? 'pie' : 'count');
                     
                     if (detectedType === 'pie') {
+                      const isExpanded = expandedStat && sameId(expandedStat.id, stat.id);
+                      const btnClass = `w-full text-left rounded-xl overflow-hidden border ${isExpanded ? 'ring-2 ring-[#c8f135]/70 border-2 border-[#c8f135]/40' : 'border-transparent'}`;
                       return (
-                        <StatCardPie
-                          key={stat.id}
-                          data={stat.data || []}
-                          label={stat.label}
-                          icon={stat.icon}
-                          total={stat.total}
-                        />
+                        <button key={stat.id} type="button" className={btnClass} onClick={() => openExpandedForStat(stat)}>
+                          <StatCardPie
+                            data={stat.data || []}
+                            label={stat.label}
+                            icon={stat.icon}
+                            total={stat.total}
+                          />
+                        </button>
                       );
                     }
                     if (detectedType === 'bar') {
+                      const isExpanded = expandedStat && sameId(expandedStat.id, stat.id);
+                      const btnClass = `w-full text-left rounded-xl overflow-hidden border ${isExpanded ? 'ring-2 ring-[#c8f135]/70 border-2 border-[#c8f135]/40' : 'border-transparent'}`;
                       return (
-                        <StatCardBar
-                          key={stat.id}
-                          data={stat.data || []}
-                          label={stat.label}
-                          icon={stat.icon}
-                        />
+                        <button key={stat.id} type="button" className={btnClass} onClick={() => openExpandedForStat(stat)}>
+                          <StatCardBar
+                            data={stat.data || []}
+                            label={stat.label}
+                            icon={stat.icon}
+                          />
+                        </button>
                       );
                     }
                     if (stat.type === 'latest') {
@@ -663,34 +715,37 @@ export default function Dashboard() {
                           fieldDefs[f.name] = f;
                         });
                       }
+                      const isExpanded = expandedStat && sameId(expandedStat.id, stat.id);
+                      const btnClass = `w-full text-left rounded-lg overflow-hidden border ${isExpanded ? 'ring-2 ring-[#c8f135]/70 border-[#c8f135]/40' : 'border-transparent'}`;
                       return (
-                        <StatCardLatest
-                          key={stat.id}
-                          records={stat.records}
-                          fields={stat.display_fields}
-                          fieldLabels={fieldLabels}
-                          fieldDefs={fieldDefs}
-                          label={stat.label}
-                          icon={stat.icon}
-                          entitySlug={stat.entity_type}
-                          canNavigate={!!entityTypes.find(et => et.slug === stat.entity_type)
-                            || !!dynamicMenus.find(m => m.slug === stat.entity_type)
-                            || ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'].includes(stat.entity_type)}
-                          onNavigate={(slug) => {
-                            const entity = entityTypes.find(et => et.slug === slug)
-                              || dynamicMenus.find(m => m.slug === slug);
-                            if (entity && entity.fields) {
-                              setActiveEntityType(entity);
-                            }
-                            const resolvedSlug = entity?.slug || slug;
-                            const knownMenus = ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'];
-                            if (!entity && knownMenus.includes(slug)) {
-                              setActiveMenu(slug);
-                            } else {
-                              setActiveMenu(`dynamic-${resolvedSlug}`);
-                            }
-                          }}
-                        />
+                        <button key={stat.id} type="button" className={btnClass} onClick={() => openExpandedForStat(stat)}>
+                          <StatCardLatest
+                            records={stat.records}
+                            fields={stat.display_fields}
+                            fieldLabels={fieldLabels}
+                            fieldDefs={fieldDefs}
+                            label={stat.label}
+                            icon={stat.icon}
+                            entitySlug={stat.entity_type}
+                            canNavigate={!!entityTypes.find(et => et.slug === stat.entity_type)
+                              || !!dynamicMenus.find(m => m.slug === stat.entity_type)
+                              || ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'].includes(stat.entity_type)}
+                            onNavigate={(slug) => {
+                              const entity = entityTypes.find(et => et.slug === slug)
+                                || dynamicMenus.find(m => m.slug === slug);
+                              if (entity && entity.fields) {
+                                setActiveEntityType(entity);
+                              }
+                              const resolvedSlug = entity?.slug || slug;
+                              const knownMenus = ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'];
+                              if (!entity && knownMenus.includes(slug)) {
+                                setActiveMenu(slug);
+                              } else {
+                                setActiveMenu(`dynamic-${resolvedSlug}`);
+                              }
+                            }}
+                          />
+                        </button>
                       );
                     }
 
@@ -791,6 +846,139 @@ export default function Dashboard() {
                     exiting={timelineExiting}
                   />
                 )}
+
+                {/* Expanded panel para otros tipos de estadística (pie, bar, latest) */}
+                {(expandedStat || expandedExiting) && (
+                  <div className={`mt-6 ${expandedExiting ? 'animate-fade-out' : 'animate-fade-in'}`}>
+                    <div className={`rounded-xl shadow-lg border p-6 ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'} ${expandedStat && !expandedExiting ? 'ring-2 ring-[#c8f135]/70 border-2 border-[#c8f135]/40' : ''}`}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h2 className={`text-lg font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
+                            {expandedStat?.label}
+                          </h2>
+                          <p className={`text-sm mt-1 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+                            Vista detallada
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          { /* Usar mismo botón que la línea de tiempo */ }
+                          <button
+                            type="button"
+                            onClick={closeExpandedPanel}
+                            className={`text-sm px-2 py-1 rounded-md border ${isDark ? 'border-gray-600 text-gray-300 hover:bg-[#0f0f0f]' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Contenido expandido según tipo */}
+                      {expandedStat && (expandedStat._detectedType === 'pie') && (() => {
+                        const items = expandedStat.data || [];
+                        const sum = expandedStat.total || items.reduce((acc, d) => acc + (d.count || d.value || 0), 0);
+                        const cx = 100, cy = 100, r = 80;
+                        let currentAngle = 0;
+                        const slices = items.map((d) => {
+                          const portion = (d.count || d.value || 0) / (sum || 1);
+                          const angle = portion * 360;
+                          const slice = { ...d, startAngle: currentAngle, endAngle: currentAngle + angle };
+                          currentAngle += angle;
+                          return slice;
+                        });
+
+                        const polarToCartesian = (cx, cy, r, angleDeg) => {
+                          const rad = (angleDeg - 90) * Math.PI / 180;
+                          return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+                        };
+                        const pieSlicePath = (cx, cy, r, startAngle, endAngle) => {
+                          const start = polarToCartesian(cx, cy, r, endAngle);
+                          const end = polarToCartesian(cx, cy, r, startAngle);
+                          const angleDiff = (startAngle - endAngle + 360) % 360;
+                          const largeArc = angleDiff > 180 ? 1 : 0;
+                          return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
+                        };
+
+                        return (
+                          <div className="w-full flex flex-col items-center gap-6">
+                            <div className="shrink-0">
+                              <svg width="320" height="320" viewBox="0 0 220 220">
+                                {sum > 0 ? slices.map((slice, i) => (
+                                  <path
+                                    key={i}
+                                    d={pieSlicePath(cx, cy, r, slice.startAngle, slice.endAngle)}
+                                    fill={['#c8f135', '#7dd3fc', '#fbbf24', '#c4b5fd', '#fb7185', '#4ade80', '#fdba74', '#38bdf8'][i % 8]}
+                                    stroke={isDark ? '#1a1a1a' : '#fff'}
+                                    strokeWidth="1"
+                                  />
+                                )) : (
+                                  <circle cx={cx} cy={cy} r={r} fill="none" stroke={isDark ? '#374151' : '#d1d5db'} strokeWidth="2" />
+                                )}
+                              </svg>
+                            </div>
+                            <div className="w-full max-w-md">
+                              <p className={`text-sm mb-2 text-center ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Detalle</p>
+                              <div className="space-y-2 max-h-48 overflow-auto">
+                                {items.slice(0, 12).map((d, i) => {
+                                  const cnt = d.count || d.value || 0;
+                                  const pct = sum ? Math.round((cnt / sum) * 1000) / 10 : 0;
+                                  const color = ['#c8f135', '#7dd3fc', '#fbbf24', '#c4b5fd', '#fb7185', '#4ade80', '#fdba74', '#38bdf8'][i % 8];
+                                  return (
+                                    <div key={i} className="flex items-center gap-3">
+                                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                      <div className="flex-1 text-sm truncate">
+                                        <div className={`${isDark ? 'text-gray-200' : 'text-gray-800'} font-medium`}>{d.label || d.name}</div>
+                                        <div className={`${isDark ? 'text-gray-400' : 'text-gray-500'} text-xs`}>{pct}% — {cnt}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {expandedStat && (expandedStat._detectedType === 'bar') && (() => {
+                        const items = expandedStat.data || [];
+                        const maxCount = Math.max(...items.map(d => d.count || d.value || 0), 1);
+                        const COLORS = ['#c8f135', '#7dd3fc', '#fbbf24', '#c4b5fd', '#fb7185', '#4ade80', '#fdba74', '#38bdf8'];
+                        return (
+                          <div className="w-full">
+                            <div className="space-y-2">
+                              {items.slice(0, 12).map((d, i) => {
+                                const cnt = d.count || d.value || 0;
+                                const widthPct = Math.max((cnt / maxCount) * 100, 2);
+                                return (
+                                  <div key={i} className="flex items-center gap-3">
+                                    <div className="w-36 text-xs text-right text-gray-400">{d.label || d.name}</div>
+                                    <div className={`flex-1 h-4 rounded overflow-hidden ${isDark ? 'bg-[#0f0f0f]' : 'bg-gray-100'}`}>
+                                      <div style={{ width: `${widthPct}%`, backgroundColor: COLORS[i % COLORS.length] }} className="h-full rounded transition-all" />
+                                    </div>
+                                    <div className="w-10 text-right text-sm font-medium">{cnt}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {expandedStat && (expandedStat._detectedType === 'latest') && (
+                        <div className="w-full">
+                          <p className={`text-sm mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Mostrando hasta 10 registros</p>
+                          <StatCardLatest records={(expandedStat.records || []).slice(0, 10)} fields={expandedStat.display_fields || []} fieldLabels={{}} label={expandedStat.label} icon={expandedStat.icon} entitySlug={expandedStat.entity_type} onNavigate={(slug) => { setActiveMenu(`dynamic-${slug}`); }} />
+                        </div>
+                      )}
+
+                      {/* Fallback: mostrar datos crudos */}
+                      {expandedStat && !['pie','bar','latest'].includes(expandedStat._detectedType) && (
+                        <pre className="text-xs mt-4 overflow-auto max-h-60 rounded border p-2 bg-gray-50 text-gray-700">
+                          {JSON.stringify(expandedStat, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -815,6 +1003,34 @@ export default function Dashboard() {
               const entityType = activeEntityType || entityTypes.find(et => et.slug === activeMenu.replace('dynamic-', ''));
               if (!entityType) {
                 return <div className="p-6">EntityType no encontrado</div>;
+              }
+              // Si es un dashboard, renderizar con DashboardModule
+              if (entityType.type === 'dashboard') {
+                return (
+                  <>
+                    <DashboardModule
+                      entityType={entityType}
+                      entityTypes={entityTypes}
+                      onNavigate={(targetEntity, action, record) => {
+                        if (targetEntity) {
+                          setActiveEntityType(targetEntity);
+                          setActiveMenu(`dynamic-${targetEntity.slug}`);
+                        }
+                      }}
+                    />
+                    {editingDashboard && (
+                      <DashboardModuleBuilder
+                        entityType={editingDashboard}
+                        entityTypes={entityTypes}
+                        onCancel={() => setEditingDashboard(null)}
+                        onSave={() => {
+                          fetchDynamicMenus();
+                          setEditingDashboard(null);
+                        }}
+                      />
+                    )}
+                  </>
+                );
               }
               // Si es una sección landing, renderizar con LandingSection
               if (entityType.type === 'landing') {

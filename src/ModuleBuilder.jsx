@@ -4,12 +4,15 @@ import { ThemeContext } from './ThemeContext';
 import { API_URL } from './config';
 import * as LucideIcons from 'lucide-react';
 
-export default function ModuleBuilder({ onSuccess, onCancel, isModal = false }) {
+export default function ModuleBuilder({ onSuccess, onCancel, isModal = false, onEditDashboard }) {
   const { theme } = useContext(ThemeContext);
   const isDark = theme === 'dark';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentStep, setCurrentStep] = useState(1);
+
+  // Tipo de módulo: form, landing, dashboard
+  const [moduleType, setModuleType] = useState('form');
 
   // Búsqueda de iconos
   const [iconSearch, setIconSearch] = useState('');
@@ -251,16 +254,18 @@ const fieldTypes = [
       setError('El nombre del menú es requerido');
       return;
     }
-    if (!formConfig.title.trim()) {
-      setError('El título del formulario es requerido');
-      return;
-    }
 
-    // Validar que todos los campos tengan nombre
-    const invalidField = formConfig.fields.find(f => !f.name.trim());
-    if (invalidField) {
-      setError('Todos los campos deben tener un nombre');
-      return;
+    // Para tipo 'form', validar título y campos
+    if (moduleType === 'form') {
+      if (!formConfig.title.trim()) {
+        setError('El título del formulario es requerido');
+        return;
+      }
+      const invalidField = formConfig.fields.find(f => !f.name.trim());
+      if (invalidField) {
+        setError('Todos los campos deben tener un nombre');
+        return;
+      }
     }
 
     setLoading(true);
@@ -271,23 +276,29 @@ const fieldTypes = [
         menu_location: menuConfig.location,
         menu_name: menuConfig.name,
         menu_icon: menuConfig.icon,
-        form_title: formConfig.title,
         has_submenu: false,
-        fields: formConfig.fields.map(f => ({
-          name: f.name,
-          type: f.type,
-          required: f.required,
-          ...(f.max_length ? { max_length: f.max_length } : {}),
-          ...(f.type === 'select-entity' && f.entity_source ? { entity_source: f.entity_source } : {}),
-        })),
+        type: moduleType,
         // Si es submenú, incluir datos del menú padre
         is_submenu: menuConfig.isSubmenu,
         parent_menu_name: menuConfig.isSubmenu ? menuConfig.parentName : null,
         parent_menu_icon: menuConfig.isSubmenu ? menuConfig.parentIcon : null,
       };
 
-      console.log('Form fields:', formConfig.fields);
-      console.log('Payload fields:', payload.fields);
+      if (moduleType === 'form') {
+        payload.form_title = formConfig.title;
+        payload.fields = formConfig.fields.map(f => ({
+          name: f.name,
+          type: f.type,
+          required: f.required,
+          ...(f.max_length ? { max_length: f.max_length } : {}),
+          ...(f.type === 'select-entity' && f.entity_source ? { entity_source: f.entity_source } : {}),
+        }));
+      } else {
+        payload.form_title = menuConfig.name;
+        if (moduleType === 'dashboard') {
+          payload.layout_data = { sections: [] };
+        }
+      }
 
       const response = await fetch(`${API_URL}/entity-types`, {
         method: 'POST',
@@ -301,7 +312,7 @@ const fieldTypes = [
       const data = await response.json();
 
       if (data.success) {
-        onSuccess?.();
+        onSuccess?.(data.entity_type);
       } else {
         setError(data.message || 'Error al crear el módulo');
       }
@@ -337,10 +348,38 @@ const fieldTypes = [
           {currentStep === 1 && (
             <section>
               <h2 className={`text-lg font-semibold mb-4 pb-2 border-b ${isDark ? 'border-gray-700 text-[#c8f135]' : 'border-gray-300 text-green-700'}`}>
-                1. Configuración del Menú
+                1. Tipo de Módulo y Menú
               </h2>
 
               <div className="space-y-4">
+                {/* Selector de tipo de módulo */}
+                <div className={`grid grid-cols-3 gap-3 mb-4`}>
+                  {[
+                    { value: 'form', label: 'Formulario', icon: 'file-text', desc: 'CRUD con campos dinámicos, tabla y búsqueda' },
+                    { value: 'landing', label: 'Landing Page', icon: 'layout', desc: 'Página visual con bloques editables' },
+                    { value: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', desc: 'Panel con secciones que enlazan a otros módulos' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setModuleType(opt.value)}
+                      className={`p-4 rounded-xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
+                        moduleType === opt.value
+                          ? 'border-[#c8f135] bg-[#c8f135]/10 shadow-[0_0_10px_rgba(200,241,53,0.1)]'
+                          : isDark ? 'border-gray-700 bg-[#0f0f0f] hover:border-gray-600' : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                        moduleType === opt.value ? 'bg-[#c8f135] text-black' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {renderIcon(opt.icon, 'w-5 h-5')}
+                      </div>
+                      <p className={`text-sm font-semibold mb-1 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{opt.label}</p>
+                      <p className={`text-xs leading-tight ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className={`border-t pt-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 {/* Checkbox para submenú */}
                 <div className={`p-4 rounded-lg border ${isDark ? 'bg-[#0f0f0f]/50 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -525,6 +564,7 @@ const fieldTypes = [
                   </p>
                 </div>
               </div>
+            </div>
             </section>
           )}
 
@@ -725,17 +765,31 @@ const fieldTypes = [
             )}
 
             {currentStep === 1 ? (
-              <button
-                onClick={() => setCurrentStep(2)}
-                disabled={!menuConfig.name || loading}
-                className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                  !menuConfig.name || loading
-                    ? 'opacity-50 cursor-not-allowed bg-gray-400'
-                    : 'bg-[#c8f135] hover:bg-[#b8e125] text-[#1a1a1a] hover:scale-[1.02] active:scale-[0.98]'
-                }`}
-              >
-                Siguiente
-              </button>
+              moduleType === 'form' ? (
+                <button
+                  onClick={() => setCurrentStep(2)}
+                  disabled={!menuConfig.name || loading}
+                  className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    !menuConfig.name || loading
+                      ? 'opacity-50 cursor-not-allowed bg-gray-400'
+                      : 'bg-[#c8f135] hover:bg-[#b8e125] text-[#1a1a1a] hover:scale-[1.02] active:scale-[0.98]'
+                  }`}
+                >
+                  Siguiente
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={!menuConfig.name || loading}
+                  className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    !menuConfig.name || loading
+                      ? 'opacity-50 cursor-not-allowed bg-gray-400'
+                      : 'bg-[#c8f135] hover:bg-[#b8e125] text-[#1a1a1a] hover:scale-[1.02] active:scale-[0.98]'
+                  }`}
+                >
+                  {loading ? 'Creando...' : `Crear ${moduleType === 'dashboard' ? 'Dashboard' : 'Landing Page'}`}
+                </button>
+              )
             ) : (
               <button
                 onClick={handleSubmit}

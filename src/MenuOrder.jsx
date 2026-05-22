@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { API_URL } from './config';
 import ModuleBuilder from './ModuleBuilder';
 import SubmenuManager from './SubmenuManager';
-import LandingSectionBuilder from './LandingSectionBuilder';
+import DashboardModuleBuilder from './DashboardModuleBuilder';
 import { AuthContext } from './AuthContext';
 import { ThemeContext } from './ThemeContext';
 import * as LucideIcons from 'lucide-react';
@@ -71,9 +71,9 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
   const [editForm, setEditForm] = useState({ menu_name: '', menu_icon: '' });
   const [editIconSearch, setEditIconSearch] = useState('');
 
-  // Landing Section Builder
-  const [sectionBuilderOpen, setSectionBuilderOpen] = useState(false);
-  const [editingSection, setEditingSection] = useState(null);
+  // Dashboard Builder
+  const [dashboardBuilderOpen, setDashboardBuilderOpen] = useState(false);
+  const [editingDashboard, setEditingDashboard] = useState(null);
 
   // Mapa de children por parent_id (calculado una vez)
   const getChildrenMap = () => {
@@ -468,22 +468,6 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
             </svg>
             Nuevo Módulo
           </button>
-          <button
-            onClick={() => {
-              setEditingSection(null);
-              setSectionBuilderOpen(true);
-            }}
-            className={`px-4 py-2 font-medium rounded-lg transition-all flex items-center gap-2 ${
-              isDark 
-                ? 'bg-blue-600 text-white hover:bg-blue-500' 
-                : 'bg-blue-500 text-white hover:bg-blue-600'
-            }`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-            </svg>
-            Nueva Sección
-          </button>
           {onBack && (
             <button
               onClick={onBack}
@@ -666,7 +650,7 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
                               stroke="currentColor"
                               viewBox="0 0 24 24"
                             >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7-7 7 7" />
                             </svg>
                           </button>
                         )}
@@ -751,6 +735,22 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
                         </button>
                       )}
 
+                      {/* Editar dashboard (solo para tipo dashboard) */}
+                      {menu.type === 'dashboard' && (
+                        <button
+                          onClick={() => {
+                            setEditingDashboard(menu);
+                            setDashboardBuilderOpen(true);
+                          }}
+                          className={`p-2 rounded-lg transition-colors ${isDark ? 'text-[#c8f135] hover:bg-[#c8f135]/20' : 'text-green-600 hover:bg-green-100'}`}
+                          title="Editar secciones del dashboard"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                        </button>
+                      )}
+
                       {/* Editar menú */}
                       <button
                         onClick={() => openEditModal(menu)}
@@ -761,22 +761,6 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-
-                      {/* Editar sección landing (solo para tipo landing) */}
-                      {menu.type === 'landing' && (
-                        <button
-                          onClick={() => {
-                            setEditingSection(menu);
-                            setSectionBuilderOpen(true);
-                          }}
-                          className={`p-2 rounded-lg transition-colors ${isDark ? 'text-purple-400 hover:bg-purple-500/20' : 'text-purple-600 hover:bg-purple-100'}`}
-                          title="Editar contenido de la sección"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                          </svg>
-                        </button>
-                      )}
 
                       {/* Toggle activo/inactivo */}
                       <button
@@ -920,20 +904,21 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
         }}
       />
 
-      {/* Landing Section Builder */}
-      {sectionBuilderOpen && (
-        <LandingSectionBuilder
-          key={editingSection?.id || 'new'}
-          isOpen={sectionBuilderOpen}
-          onClose={() => {
-            setSectionBuilderOpen(false);
-            setEditingSection(null);
+      {/* Dashboard Module Builder */}
+      {dashboardBuilderOpen && editingDashboard && (
+        <DashboardModuleBuilder
+          entityType={editingDashboard}
+          entityTypes={menus}
+          onCancel={() => {
+            setDashboardBuilderOpen(false);
+            setEditingDashboard(null);
           }}
-          onSuccess={() => {
+          onSave={() => {
             loadMenus();
             onModuleCreated?.();
+            setDashboardBuilderOpen(false);
+            setEditingDashboard(null);
           }}
-          section={editingSection}
         />
       )}
 
