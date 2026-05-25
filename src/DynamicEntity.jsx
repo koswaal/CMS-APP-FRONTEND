@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { ThemeContext } from './ThemeContext';
+import DataTable from './DataTable';
 import { API_URL } from './config';
 
 export default function DynamicEntity({ entityType: initialEntityType, onBack, onRecordChanged }) {
@@ -25,6 +26,16 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
   const [groupedRecords, setGroupedRecords] = useState([]);
   const [entityTypePagination, setEntityTypePagination] = useState({});
   const [selectOptions, setSelectOptions] = useState({}); // Opciones para campos select-entity
+  const [visibleKeys, setVisibleKeys] = useState(null);
+  const [showColumnPanel, setShowColumnPanel] = useState(false);
+  const panelRef = useRef(null);
+  const toggleColumn = (key) => {
+    setVisibleKeys(prev => {
+      const u = new Set(prev);
+      if (u.has(key)) u.delete(key); else u.add(key);
+      return u;
+    });
+  };
   const [searchTerm, setSearchTerm] = useState(''); // Término de búsqueda
 
   // Resetear búsqueda cuando cambia el entityType
@@ -258,6 +269,20 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
     localStorage.setItem(`dynamicForm_${entityType.slug}`, JSON.stringify(formState));
   }, [showForm, editingRecord, formData]);
 
+  // Inicializar columnas visibles del DataTable
+  const fieldKeys = entityType.fields?.map(f => f.name) || [];
+  useEffect(() => {
+    if (fieldKeys.length && !visibleKeys) {
+      setVisibleKeys(new Set(fieldKeys));
+    }
+  }, [entityType.fields]);
+
+  useEffect(() => {
+    if (!showColumnPanel) return;
+    const h = (e) => { if (panelRef.current && !panelRef.current.contains(e.target)) setShowColumnPanel(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showColumnPanel]);
   // Inicializar formulario vacío
   const initializeForm = (record = null) => {
     const initial = {};
@@ -345,6 +370,32 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
   };
 
   // Guardar (crear o actualizar)
+  const handleCellEdit = async (record, key, value) => {
+    const oldVal = record.data?.[key];
+    if (String(oldVal) === String(value)) return;
+
+    try {
+      const response = await fetch(`${API_URL}/dynamic/${entityType.slug}/${record.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ...record.data, [key]: value }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchRecords(pagination.current_page);
+        if (onRecordChanged) onRecordChanged();
+      } else {
+        alert(data.message || 'Error al actualizar');
+      }
+    } catch (err) {
+      alert('Error de conexión: ' + err.message);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
  
@@ -771,8 +822,31 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
                 {searchTerm && ` para "${searchTerm}"`}
                 {pagination.last_page > 1 && ` • Página ${pagination.current_page} de ${pagination.last_page}`}
               </div>
-              {/* Selector de registros por página */}
+              {/* Columnas + Selector de registros por página */}
               <div className="flex items-center gap-2">
+                <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Columnas:</span>
+                <div className="relative" ref={panelRef}>
+                  <button onClick={() => setShowColumnPanel(v => !v)}
+                    className={`pl-3 pr-10 py-1.5 min-w-[7rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer text-left appearance-none ${isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}>
+                    {visibleKeys ? `${visibleKeys.size}/${entityType.fields?.length || 0}` : '—'}
+                  </button>
+                  <svg className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  {showColumnPanel && (
+                    <div className={`absolute z-20 mt-1 right-0 w-52 rounded-lg border shadow-lg p-2 ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
+                      <p className={`text-xs font-semibold mb-1.5 px-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Columnas visibles</p>
+                      <div className="max-h-64 overflow-y-auto space-y-0.5">
+                        {(entityType.fields || []).map(field => (
+                          <label key={field.name} className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded cursor-pointer transition-colors ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                            <input type="checkbox" checked={visibleKeys?.has(field.name) || false} onChange={() => toggleColumn(field.name)} className="accent-[#c8f135] w-3.5 h-3.5" />
+                            {field.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
                 <select
                   value={itemsPerPage}
@@ -817,242 +891,182 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
               Crear el primero →
             </button>
           </div>
-        ) : (
-          <>
-            {/* Tabla */}
+        ) : entityType.is_container ? (
             <div className={`rounded-xl overflow-hidden shadow-lg ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className={isDark ? 'bg-[#0f0f0f]' : 'bg-gray-50'}>
                     <tr>
                       <th className={`px-6 py-4 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'} w-8`}></th>
-                      <th className={`pl-4 pr-2 py-3 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Acciones
-                      </th>
+                      <th className={`pl-4 pr-2 py-3 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Acciones</th>
                       {entityType.fields?.map((field) => (
-                        <th
-                          key={field.name}
-                          className={`px-6 py-4 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
-                        >
-                          {field.label}
-                        </th>
+                        <th key={field.name} className={`px-6 py-4 text-left text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{field.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700/30">
-                    {groupedRecords.length > 0 ? (
-                      groupedRecords.map((et) => {
-                        const isExpanded = expandedEntityTypes.has(et.id);
-                        const isChild = et.is_child;
-
-                        return (
-                          <React.Fragment key={et.id}>
-                            {/* Fila de encabezado del EntityType */}
-                            {et.is_container && (
-                              <tr className={`${isDark ? 'bg-[#c8f135]/10' : 'bg-green-50'}`}>
-                                <td className="px-6 py-4">
-                                  {et.records.length > 0 && (
-                                    <button
-                                      onClick={() => {
-                                        setExpandedEntityTypes(prev => {
-                                          const newSet = new Set(prev);
-                                          if (newSet.has(et.id)) {
-                                            newSet.delete(et.id);
-                                          } else {
-                                            newSet.add(et.id);
-                                          }
-                                          return newSet;
-                                        });
-                                      }}
-                                      className={`p-1 rounded transition-colors ${isDark ? 'hover:bg-[#c8f135]/20' : 'hover:bg-green-100'}`}
-                                    >
-                                      <svg
-                                        className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                      </svg>
-                                    </button>
-                                  )}
+                    {groupedRecords.map((et) => {
+                      const isExpanded = expandedEntityTypes.has(et.id);
+                      const isChild = et.is_child;
+                      return (
+                        <React.Fragment key={et.id}>
+                          {et.is_container && (
+                            <tr className={`${isDark ? 'bg-[#c8f135]/10' : 'bg-green-50'}`}>
+                              <td className="px-6 py-4">
+                                {et.records.length > 0 && (
+                                  <button onClick={() => { setExpandedEntityTypes(prev => { const n = new Set(prev); if (n.has(et.id)) n.delete(et.id); else n.add(et.id); return n; }); }}
+                                    className={`p-1 rounded transition-colors ${isDark ? 'hover:bg-[#c8f135]/20' : 'hover:bg-green-100'}`}>
+                                    <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </td>
+                              <td colSpan={entityType.fields?.length + 1} className={`px-6 py-4 font-semibold ${isDark ? 'text-[#c8f135]' : 'text-green-700'}`}>
+                                {isChild && <span className="mr-2 ml-4">→</span>}
+                                {et.menu_name || et.form_title}
+                                <span className="ml-2 text-xs opacity-60">({et.records?.length || 0} registros)</span>
+                              </td>
+                              <td></td>
+                            </tr>
+                          )}
+                          {(!entityType.is_container || isExpanded) && et.records?.map((record) => (
+                            <tr key={record.id} className={`transition-colors ${isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-gray-50'} ${isChild ? 'bg-gray-900/30' : ''}`}>
+                              <td className="px-6 py-4">{isChild && <div className="w-4 h-4 border-l-2 border-[#c8f135]/50 ml-2"></div>}</td>
+                              <td className="pl-4 pr-6 py-4 text-left">
+                                <div className="flex items-center justify-start gap-2">
+                                  <button onClick={() => handleEdit(record)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#c8f135]/20 text-[#c8f135]' : 'hover:bg-green-100 text-green-600'}`} title="Editar">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                  </button>
+                                  <button onClick={() => handleDelete(record)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-100 text-red-600'}`} title="Eliminar">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                </div>
+                              </td>
+                              {entityType.fields?.map((field) => (
+                                <td key={field.name} className={`px-6 py-4 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'} ${isChild ? 'pl-8' : ''}`}>
+                                  {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
                                 </td>
-                                <td colSpan={entityType.fields?.length + 1} className={`px-6 py-4 font-semibold ${isDark ? 'text-[#c8f135]' : 'text-green-700'}`}>
-                                  {isChild && <span className="mr-2 ml-4">→</span>}
-                                  {et.menu_name || et.form_title}
-                                  <span className="ml-2 text-xs opacity-60">({et.records?.length || 0} registros)</span>
-                                </td>
-                                <td></td>
-                              </tr>
-                            )}
-                            {/* Registros del EntityType */}
-                            {(!entityType.is_container || isExpanded) && et.records?.length === 0 && searchTerm && (
-                              <tr key="no-results">
-                                <td colSpan={entityType.fields?.length + 2} className={`px-6 py-4 text-left text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                  No se encontraron registros que coincidan con &quot;{searchTerm}&quot;
-                                </td>
-                              </tr>
-                            )}
-                            {(!entityType.is_container || isExpanded) && et.records?.map((record) => (
-                                <tr
-                                  key={record.id}
-                                  className={`transition-colors ${isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-gray-50'} ${isChild ? 'bg-gray-900/30' : ''}`}
-                                >
-                                  <td className="px-6 py-4">
-                                    {isChild && <div className="w-4 h-4 border-l-2 border-[#c8f135]/50 ml-2"></div>}
-                                  </td>
-                                  <td className="pl-4 pr-6 py-4 text-left">
-                                    <div className="flex items-center justify-start gap-2">
-                                      <button
-                                        onClick={() => handleEdit(record)}
-                                        className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#c8f135]/20 text-[#c8f135]' : 'hover:bg-green-100 text-green-600'}`}
-                                        title="Editar"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                      </button>
-                                      <button
-                                        onClick={() => handleDelete(record)}
-                                        className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-100 text-red-600'}`}
-                                        title="Eliminar"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </td>
-                                  {entityType.fields?.map((field) => (
-                                    <td
-                                      key={field.name}
-                                      className={`px-6 py-4 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'} ${isChild ? 'pl-8' : ''}`}
-                                    >
-                                      {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
-                                    </td>
-                                  ))}
-                                </tr>
                               ))}
-                            {/* Paginación del EntityType */}
-                            {(!entityType.is_container || isExpanded) && et.pagination && et.pagination.last_page > 1 && (
-                              <tr>
-                                <td colSpan={entityType.fields?.length + 2} className="px-4 py-2">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button
-                                      onClick={() => handleEntityTypePageChange(et.id, et.pagination.current_page - 1)}
-                                      disabled={et.pagination.current_page === 1}
-                                      className={`px-2 py-1 rounded text-xs ${
-                                        et.pagination.current_page === 1
-                                          ? 'opacity-50 cursor-not-allowed'
-                                          : 'hover:bg-[#c8f135]/20 text-[#c8f135]'
-                                      }`}
-                                    >
-                                      ←
-                                    </button>
-                                    <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                                      {et.pagination.current_page} / {et.pagination.last_page}
-                                    </span>
-                                    <button
-                                      onClick={() => handleEntityTypePageChange(et.id, et.pagination.current_page + 1)}
-                                      disabled={et.pagination.current_page === et.pagination.last_page}
-                                      className={`px-2 py-1 rounded text-xs ${
-                                        et.pagination.current_page === et.pagination.last_page
-                                          ? 'opacity-50 cursor-not-allowed'
-                                          : 'hover:bg-[#c8f135]/20 text-[#c8f135]'
-                                      }`}
-                                    >
-                                      →
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    ) : records.length === 0 && searchTerm ? (
-                      <tr>
-                        <td colSpan={entityType.fields?.length + 2} className={`px-4 py-4 text-center text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                          No se encontraron registros que coincidan con &quot;{searchTerm}&quot;
-                        </td>
-                      </tr>
-                    ) : (
-                      records.map((record) => (
-                        <tr
-                          key={record.id}
-                          className={`transition-colors ${isDark ? 'hover:bg-[#2a2a2a]' : 'hover:bg-gray-50'}`}
-                        >
-                          <td className="px-6 py-4"></td>
-                          <td className="pl-4 pr-6 py-4 text-left">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleEdit(record)}
-                                className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#c8f135]/20 text-[#c8f135]' : 'hover:bg-green-100 text-green-600'}`}
-                                title="Editar"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleDelete(record)}
-                                className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-100 text-red-600'}`}
-                                title="Eliminar"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                          {entityType.fields?.map((field) => (
-                            <td
-                              key={field.name}
-                              className={`px-6 py-4 text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
-                            >
-                              {getFieldDisplayValue(field, record.data?.[field.name], record.id)}
-                            </td>
+                            </tr>
                           ))}
-                        </tr>
-                      ))
-                    )}
+                          {(!entityType.is_container || isExpanded) && et.pagination && et.pagination.last_page > 1 && (
+                            <tr>
+                              <td colSpan={entityType.fields?.length + 2} className="px-4 py-2">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button onClick={() => handleEntityTypePageChange(et.id, et.pagination.current_page - 1)} disabled={et.pagination.current_page === 1}
+                                    className={`px-2 py-1 rounded text-xs ${et.pagination.current_page === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#c8f135]/20 text-[#c8f135]'}`}>←</button>
+                                  <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{et.pagination.current_page} / {et.pagination.last_page}</span>
+                                  <button onClick={() => handleEntityTypePageChange(et.id, et.pagination.current_page + 1)} disabled={et.pagination.current_page === et.pagination.last_page}
+                                    className={`px-2 py-1 rounded text-xs ${et.pagination.current_page === et.pagination.last_page ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#c8f135]/20 text-[#c8f135]'}`}>→</button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {pagination.last_page > 1 && (
+                <div className="flex items-center justify-center gap-2 p-4 border-t border-gray-700/30">
+                  <button onClick={() => fetchRecords(pagination.current_page - 1)} disabled={pagination.current_page === 1}
+                    className={`px-3 py-2 rounded-lg ${pagination.current_page === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#c8f135]/20 text-[#c8f135]'}`}>← Anterior</button>
+                  <span className={`px-4 py-2 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>Página {pagination.current_page} de {pagination.last_page}</span>
+                  <button onClick={() => fetchRecords(pagination.current_page + 1)} disabled={pagination.current_page === pagination.last_page}
+                    className={`px-3 py-2 rounded-lg ${pagination.current_page === pagination.last_page ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#c8f135]/20 text-[#c8f135]'}`}>Siguiente →</button>
+                </div>
+              )}
             </div>
+          ) : (
+            <div className={`rounded-xl overflow-hidden shadow-lg ${isDark ? 'bg-[#1a1a1a] border border-gray-700' : 'bg-white border border-gray-200'}`}>
+              <DataTable
+                columns={[
+                  ...(entityType.fields || []).map(field => ({
+                    key: field.name,
+                    label: field.label,
+                    sortable: true,
+                    filterable: true,
+                    editable: !['id', 'correlativo', 'image'].includes(field.type),
+                    numeric: field.type === 'number',
+                    valueGetter: (record) => record.data?.[field.name],
+                    filterLabel: (val) => {
+                      if (field.type === 'select-entity') {
+                        const opts = selectOptions[field.name] || [];
+                        const opt = opts.find(o => String(o.id) === String(val));
+                        return opt?.label ?? val;
+                      }
+                      return val;
+                    },
+                    render: (record) => getFieldDisplayValue(field, record.data?.[field.name], record.id),
+                    renderEdit: ['select-entity', 'date'].includes(field.type) ? (record, value, onChange, onCommit, onCancel) => {
+                      if (field.type === 'date') {
+                        return (
+                          <input
+                            type="date"
+                            autoFocus
+                            value={value ?? ''}
+                            onChange={e => onChange(e.target.value)}
+                            onBlur={onCommit}
+                            onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+                            className={`w-full px-1 py-0.5 rounded border text-xs outline-none focus:ring-1 focus:ring-[#c8f135] ${isDark ? 'bg-[#0f0f0f] border-gray-600 text-white [color-scheme:dark]' : 'bg-white border-gray-400 text-gray-900'}`}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        );
+                      }
 
-            {/* Paginación */}
-            {pagination.last_page > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-6">
-                <button
-                  onClick={() => fetchRecords(pagination.current_page - 1)}
-                  disabled={pagination.current_page === 1}
-                  className={`px-3 py-2 rounded-lg ${
-                    pagination.current_page === 1
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-[#c8f135]/20 text-[#c8f135]'
-                  }`}
-                >
-                  ← Anterior
-                </button>
-                <span className={`px-4 py-2 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
-                  Página {pagination.current_page} de {pagination.last_page}
-                </span>
-                <button
-                  onClick={() => fetchRecords(pagination.current_page + 1)}
-                  disabled={pagination.current_page === pagination.last_page}
-                  className={`px-3 py-2 rounded-lg ${
-                    pagination.current_page === pagination.last_page
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-[#c8f135]/20 text-[#c8f135]'
-                  }`}
-                >
-                  Siguiente →
-                </button>
-              </div>
-            )}
-          </>
-        )}
+                      const opts = selectOptions[field.name] || [];
+                      return (
+                        <select
+                          autoFocus
+                          value={value ?? ''}
+                          onChange={e => onChange(e.target.value)}
+                          onBlur={onCommit}
+                          onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+                          className={`w-full px-1 py-0.5 rounded border text-xs outline-none focus:ring-1 focus:ring-[#c8f135] ${isDark ? 'bg-[#0f0f0f] border-gray-600 text-white' : 'bg-white border-gray-400 text-gray-900'}`}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <option value="">Seleccionar...</option>
+                          {opts.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                      );
+                    } : undefined,
+                  })),
+                ]}
+                data={records}
+                keyExtractor={(r) => r.id}
+                isDark={isDark}
+                loading={false}
+                emptyMessage={searchTerm ? `No se encontraron registros para "${searchTerm}"` : 'No hay registros aún'}
+                hideToolbar
+                visibleKeys={visibleKeys}
+                onVisibleKeysChange={setVisibleKeys}
+                onCellEdit={handleCellEdit}
+                pageSize={itemsPerPage}
+                onPageSizeChange={(val) => { setItemsPerPage(val); fetchRecords(1, searchTerm, val); }}
+                currentPage={pagination.current_page}
+                totalPages={pagination.last_page}
+                onPageChange={(page) => fetchRecords(page, searchTerm)}
+                actions={[
+                  {
+                    render: (record) => (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleEdit(record)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#c8f135]/20 text-[#c8f135]' : 'hover:bg-green-100 text-green-600'}`} title="Editar">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button onClick={() => handleDelete(record)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-100 text-red-600'}`} title="Eliminar">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
       </div>
     </div>
   );

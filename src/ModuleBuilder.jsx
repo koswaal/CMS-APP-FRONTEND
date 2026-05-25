@@ -74,7 +74,7 @@ const fieldTypes = [
   }, []);
 
   // Iconos disponibles (subset de Lucide)
-  const availableIcons = [
+  const availableIconsRaw = [
     // Carpetas y archivos
     'folder-open', 'folder', 'folder-plus', 'folder-minus',
     'file-text', 'file', 'file-plus', 'file-minus', 'files',
@@ -191,6 +191,9 @@ const fieldTypes = [
     'star', 'heart', 'sparkles', 'infinity', 'sigma', 'pi', 'omega',
     'copyright', 'registered', 'trademark', 'service-mark',
   ];
+
+  // Eliminar duplicados
+  const availableIcons = [...new Set(availableIconsRaw)];
 
   // Función para renderizar icono dinámico
   const renderIcon = (iconName, className = 'w-5 h-5') => {

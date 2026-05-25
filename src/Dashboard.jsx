@@ -7,12 +7,12 @@ import * as LucideIcons from 'lucide-react';
 import Users from './Users';
 import Roles from './Roles';
 import Auditoria from './Auditoria';
-import CustomFieldsManager from './CustomFieldsManager';
 import DynamicEntity from './DynamicEntity';
 import LandingSection from './LandingSection';
 import MenuOrder from './MenuOrder';
 import StatsManager from './StatsManager';
 import Respaldos from './Respaldos';
+import AiChat from './AiChat';
 import DashboardModule from './DashboardModule';
 import DashboardModuleBuilder from './DashboardModuleBuilder';
 import UserCard from './UserCard';
@@ -76,7 +76,7 @@ export default function Dashboard() {
   // Cerrar menús expandidos cuando se selecciona un menú diferente
   useEffect(() => {
     // Si el menú activo no es un submenú de 'acceso', cerrar el menú acceso
-    const accesoSubmenus = ['users', 'roles', 'auditoria', 'menu-order', 'stats-manager', 'respaldos'];
+    const accesoSubmenus = ['users', 'roles', 'auditoria', 'menu-order', 'stats-manager', 'respaldos', 'ai-chat'];
     if (!accesoSubmenus.includes(activeMenu)) {
       setExpandedMenu((prev) => prev === 'acceso' ? null : prev);
     }
@@ -114,28 +114,36 @@ export default function Dashboard() {
   // Cargar menús dinámicos desde el Constructor de Módulos
   const fetchDynamicMenus = async () => {
     try {
-      const response = await fetch(`${API_URL}/entity-types`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('session_token')}`,
-        },
-      });
-      const data = await response.json();
+      // Cargar menús filtrados por rol (para el sidebar)
+      const [menusResponse, typesResponse] = await Promise.all([
+        fetch(`${API_URL}/entity-types/menus`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('session_token')}` },
+        }),
+        fetch(`${API_URL}/entity-types`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('session_token')}` },
+        }),
+      ]);
+      const menusData = await menusResponse.json();
+      const typesData = await typesResponse.json();
 
-      if (data.success) {
-        setEntityTypes(data.entity_types);
-        // Solo mostrar menús activos en el sidebar
-        const activeMenus = data.entity_types.filter(et => et.active !== false);
+      // entityTypes: lista completa (para renderizar DynamicEntity, DashboardModule, etc.)
+      if (typesData.success) {
+        setEntityTypes(typesData.entity_types);
+      }
+
+      // dynamicMenus: solo los que el rol del usuario puede ver (filtrado por backend)
+      if (menusData.success) {
         setDynamicMenus(
-          activeMenus.map((et) => ({
-            id: et.id,
-            slug: et.slug,
-            name: et.menu_name,
-            icon: et.menu_icon,
-            location: et.menu_location,
-            order: et.menu_order,
-            parent_id: et.parent_id,
-            is_container: et.is_container,
-          }))
+          menusData.menus.map((et) => ({
+              id: et.id,
+              slug: et.slug,
+              name: et.menu_name,
+              icon: et.menu_icon,
+              location: et.menu_location,
+              order: et.menu_order,
+              parent_id: et.parent_id,
+              is_container: et.is_container,
+            }))
         );
       }
     } catch (error) {
@@ -350,8 +358,8 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Acceso - solo visible para desarrollador y administrador */}
-          {(canAccess('users') || canAccess('roles') || user?.role === 'desarrollador' || user?.role === 'administrador') && (
+          {/* Acceso */}
+          {(canAccess('users') || canAccess('roles') || canAccess('auditoria') || canAccess('ai-chat') || user?.role === 'desarrollador') && (
             <div>
               <button
                 onClick={() => {
@@ -360,11 +368,12 @@ export default function Dashboard() {
                   } else {
                     const items = [];
                     if (canAccess('users')) items.push({ key: 'users', label: 'Usuarios' });
-                    if (canAccess('roles')) items.push({ key: 'roles', label: 'Roles' });
-                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'auditoria', label: 'Auditoría' });
-                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'menu-order', label: 'Orden de menúes' });
-                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'stats-manager', label: 'Gestión de Estadísticas' });
-                    if (user?.role === 'desarrollador' || user?.role === 'administrador') items.push({ key: 'respaldos', label: 'Reportes' });
+                    if (canAccess('roles')) items.push({ key: 'roles', label: 'Permisos' });
+                    if (canAccess('auditoria')) items.push({ key: 'auditoria', label: 'Auditoría' });
+                    if (user?.role === 'desarrollador') items.push({ key: 'menu-order', label: 'Gestión de módulos' });
+                    if (user?.role === 'desarrollador') items.push({ key: 'stats-manager', label: 'Gestión de Estadísticas' });
+                    if (user?.role === 'desarrollador') items.push({ key: 'respaldos', label: 'Reportes' });
+                    if (canAccess('ai-chat')) items.push({ key: 'ai-chat', label: 'Chat IA' });
                     setShowSubmenuPopup({ name: 'Acceso', items });
                   }
                 }}
@@ -417,10 +426,10 @@ export default function Dashboard() {
                           style={{ transitionDelay: '40ms' }}
                         >
                           <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
-                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Roles</span>}
+                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Permisos</span>}
                         </button>
                       )}
-                      {(user?.role === 'desarrollador' || user?.role === 'administrador') && (
+                      {canAccess('auditoria') && (
                         <button
                           onClick={() => setActiveMenu('auditoria')}
                           className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
@@ -434,7 +443,8 @@ export default function Dashboard() {
                           {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Auditoría</span>}
                         </button>
                       )}
-                      {(user?.role === 'desarrollador' || user?.role === 'administrador') && (
+
+                      {user?.role === 'desarrollador' && (
                         <button
                           onClick={() => setActiveMenu('menu-order')}
                           className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
@@ -442,13 +452,13 @@ export default function Dashboard() {
                               ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
                               : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
                           }`}
-                          style={{ transitionDelay: '120ms' }}
+                          style={{ transitionDelay: '160ms' }}
                         >
                           <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
-                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Orden de menúes</span>}
+                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Gestión de módulos</span>}
                         </button>
                       )}
-                      {(user?.role === 'desarrollador' || user?.role === 'administrador') && (
+                      {user?.role === 'desarrollador' && (
                         <button
                           onClick={() => setActiveMenu('stats-manager')}
                           className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
@@ -456,13 +466,13 @@ export default function Dashboard() {
                               ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
                               : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
                           }`}
-                          style={{ transitionDelay: '160ms' }}
+                          style={{ transitionDelay: '200ms' }}
                         >
                           <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
                           {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Gestión de Estadísticas</span>}
                         </button>
                       )}
-                      {(user?.role === 'desarrollador' || user?.role === 'administrador') && (
+                      {user?.role === 'desarrollador' && (
                         <button
                           onClick={() => setActiveMenu('respaldos')}
                           className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
@@ -470,10 +480,24 @@ export default function Dashboard() {
                               ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
                               : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
                           }`}
-                          style={{ transitionDelay: '200ms' }}
+                          style={{ transitionDelay: '240ms' }}
                         >
                           <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
                           {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Reportes</span>}
+                        </button>
+                      )}
+                      {canAccess('ai-chat') && (
+                        <button
+                          onClick={() => setActiveMenu('ai-chat')}
+                          className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
+                            activeMenu === 'ai-chat'
+                              ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
+                              : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                          }`}
+                          style={{ transitionDelay: '280ms' }}
+                        >
+                          <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><icons.chevronRight /></span>
+                          {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">Chat IA</span>}
                         </button>
                       )}
                     </div>
@@ -486,8 +510,9 @@ export default function Dashboard() {
             <div className="space-y-3">
               {dynamicMenus
                 .filter((menu) => !menu.parent_id)
+                .filter((menu) => canAccess(`dynamic-${menu.slug}`))
                 .map((menu) => {
-                  const children = dynamicMenus.filter((m) => m.parent_id === menu.id);
+                  const children = dynamicMenus.filter((m) => m.parent_id === menu.id && canAccess(`dynamic-${m.slug}`));
                   const hasChildren = children.length > 0;
                   const isExpanded = expandedDynamicMenus.has(menu.slug);
 
@@ -729,7 +754,7 @@ export default function Dashboard() {
                             entitySlug={stat.entity_type}
                             canNavigate={!!entityTypes.find(et => et.slug === stat.entity_type)
                               || !!dynamicMenus.find(m => m.slug === stat.entity_type)
-                              || ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'].includes(stat.entity_type)}
+                              || ['users','roles','auditoria','menu-order','stats-manager','respaldos','ai-chat'].includes(stat.entity_type)}
                             onNavigate={(slug) => {
                               const entity = entityTypes.find(et => et.slug === slug)
                                 || dynamicMenus.find(m => m.slug === slug);
@@ -737,7 +762,7 @@ export default function Dashboard() {
                                 setActiveEntityType(entity);
                               }
                               const resolvedSlug = entity?.slug || slug;
-                              const knownMenus = ['users','roles','auditoria','custom-fields','menu-order','stats-manager','respaldos'];
+                              const knownMenus = ['users','roles','auditoria','menu-order','stats-manager','respaldos','ai-chat'];
                               if (!entity && knownMenus.includes(slug)) {
                                 setActiveMenu(slug);
                               } else {
@@ -988,8 +1013,6 @@ export default function Dashboard() {
             <Roles />
             ) : activeMenu === 'auditoria' ? (
             <Auditoria />
-            ) : activeMenu === 'custom-fields' ? (
-            <CustomFieldsManager />
             ) : activeMenu === 'menu-order' ? (
             <MenuOrder
               onBack={() => setActiveMenu('dashboard')}
@@ -999,6 +1022,8 @@ export default function Dashboard() {
             <StatsManager onStatsChanged={refreshStats} />
             ) : activeMenu === 'respaldos' ? (
             <Respaldos />
+            ) : activeMenu === 'ai-chat' ? (
+            <AiChat />
             ) : activeMenu.startsWith('dynamic-') ? (() => {
               const entityType = activeEntityType || entityTypes.find(et => et.slug === activeMenu.replace('dynamic-', ''));
               if (!entityType) {

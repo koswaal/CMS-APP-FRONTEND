@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useContext } from 'react';
 import { ThemeContext } from './ThemeContext';
 import { AuthContext } from './AuthContext';
+import DataTable from './DataTable';
 import DynamicFormFields from './DynamicFormFields';
 import { API_URL } from './config';
 import { getProfileImage } from './avatarUtils';
@@ -29,10 +30,7 @@ export default function Users() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [pagination, setPagination] = useState({
-    current_page: 1,
-  });
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Auto-limpiar mensaje de éxito después de 3 segundos
   useEffect(() => {
@@ -74,7 +72,6 @@ export default function Users() {
   useEffect(() => {
     loadUsers();
     loadCustomFieldDefinitions();
-    setPagination((prev) => ({ ...prev, current_page: 1 }));
   }, []);
 
   // Cargar definiciones de campos personalizados
@@ -202,7 +199,6 @@ export default function Users() {
         setShowModal(false);
         setSuccessMessage(editingUser ? 'Usuario actualizado correctamente' : 'Usuario registrado correctamente');
         loadUsers();
-        setPagination(prev => ({ ...prev, current_page: 1 }));
       } else {
         // Mostrar errores de validación específicos si existen
         if (data.errors) {
@@ -218,7 +214,6 @@ export default function Users() {
     }
   };
 
-  // Filtrar usuarios por término de búsqueda
   const filteredUsers = users.filter((user) => {
     const term = searchTerm.toLowerCase();
     return (
@@ -228,16 +223,6 @@ export default function Users() {
       user.id?.toString().includes(term)
     );
   });
-
-  // Paginación del lado del cliente
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1;
-  const startIndex = (pagination.current_page - 1) * itemsPerPage;
-  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
-
-  // Resetear a página 1 cuando cambia la búsqueda
-  useEffect(() => {
-    setPagination(prev => ({ ...prev, current_page: 1 }));
-  }, [searchTerm]);
 
   // Eliminar usuario
   const handleDelete = async (userId) => {
@@ -256,11 +241,6 @@ export default function Users() {
         setDeleteConfirm(null);
         setSuccessMessage('Usuario eliminado correctamente');
         loadUsers();
-        // Ajustar página si eliminamos el último item de la página
-        const newTotalPages = Math.ceil((filteredUsers.length - 1) / itemsPerPage);
-        if (pagination.current_page > newTotalPages && newTotalPages > 0) {
-          setPagination(prev => ({ ...prev, current_page: newTotalPages }));
-        }
       } else {
         setError(data.message || 'Error al eliminar usuario');
       }
@@ -285,11 +265,6 @@ export default function Users() {
       if (data.success) {
         setSuccessMessage(data.message);
         loadUsers();
-        // Ajustar página si toggle en última página con pocos items
-        const newTotalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-        if (pagination.current_page > newTotalPages && newTotalPages > 0) {
-          setPagination(prev => ({ ...prev, current_page: newTotalPages }));
-        }
       } else {
         setError(data.message || 'Error al cambiar estado del usuario');
       }
@@ -303,7 +278,6 @@ export default function Users() {
     const newValue = parseInt(value, 10);
     if (Number.isNaN(newValue) || newValue < 1) return;
     setItemsPerPage(newValue);
-    setPagination((prev) => ({ ...prev, current_page: 1 }));
   };
 
   return (
@@ -314,7 +288,7 @@ export default function Users() {
           <h1 className={`text-3xl font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>Gestión de Usuarios</h1>
           <p className={`mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Administra todos los usuarios del sistema</p>
         </div>
-        {hasPermission('create', 'users') && (
+        {hasPermission('users', 'create') && (
           <button
             onClick={handleCreate}
             className="group bg-[#c8f135] hover:bg-[#d4f74e] text-black font-semibold py-2 px-6 rounded-lg transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-[0_0_20px_rgba(200,241,53,0.4)]"
@@ -376,32 +350,10 @@ export default function Users() {
           <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
             {filteredUsers.length} {filteredUsers.length === 1 ? 'registro encontrado' : 'registros encontrados'}
             {searchTerm && ` para "${searchTerm}"`}
-            {filteredUsers.length > itemsPerPage && ` • Mostrando página ${pagination.current_page} de ${totalPages}`}
           </div>
-          {!loading && filteredUsers.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => handleItemsPerPageChange(e.target.value)}
-                className={`pl-3 pr-10 py-1.5 min-w-[4.75rem] rounded-lg text-sm border focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none cursor-pointer ${
-                  isDark
-                    ? 'bg-[#1a1a1a] border-gray-700 text-gray-100'
-                    : 'bg-white border-gray-300 text-gray-900'
-                }`}
-              >
-                {[5, 10, 20, 50].map((num) => (
-                  <option key={num} value={num}>
-                    {num}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Loading State */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <div className="text-center">
@@ -410,147 +362,92 @@ export default function Users() {
           </div>
         </div>
       ) : (
-        /* Data Table */
         <div className={`rounded-lg shadow-lg border overflow-hidden ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`border-b ${isDark ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'}`}>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>ID</th>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Nombre</th>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Usuario</th>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Email</th>
-                  {customFieldDefinitions.map(field => (
-                    <th key={field.id} className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {field.field_label}
-                    </th>
-                  ))}
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Registrado</th>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Estado</th>
-                  <th className={`px-6 py-3 text-left text-xs font-bold uppercase ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7 + customFieldDefinitions.length} className="px-6 py-4 text-center text-gray-500">
-                      No hay usuarios registrados
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedUsers.map((user) => (
-                    <tr key={user.id} className={`border-b transition-colors ${isDark ? 'border-gray-700 hover:bg-[#c8f135]/10' : 'border-gray-200 hover:bg-[#c8f135]/10'}`}>
-                      <td className={`px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>#{user.id}</td>
-                      <td className={`px-6 py-4 text-sm ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={getProfileImage(user.profile_photo, user.name, API_URL.replace('/api', ''))}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full object-cover"
-                            onError={(e) => {
-                              e.target.src = getProfileImage(null, user.name);
-                            }}
-                          />
-                          {user.name}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 text-sm font-mono ${isDark ? 'text-[#c8f135]' : 'text-[#8ba328]'}`}>{user.username || '-'}</td>
-                      <td className={`px-6 py-4 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{user.email}</td>
-                      {customFieldDefinitions.map(field => {
-                        const customField = user.custom_fields?.find(cf => cf.key === field.field_key);
-                        const value = customField?.value;
-                        return (
-                          <td key={field.id} className={`px-6 py-4 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                            {value !== null && value !== undefined ? String(value) : '-'}
-                          </td>
-                        );
-                      })}
-                      <td className={`px-6 py-4 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {new Date(user.created_at).toLocaleDateString('es-ES')}
-                      </td>
-                      <td className="px-6 py-4">
-                        {hasPermission('edit', 'users') ? (
-                          <button
-                            onClick={() => handleToggleActivo(user)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                              user.activo
-                                ? isDark ? 'bg-green-900 text-green-200 hover:bg-green-800' : 'bg-green-100 text-green-800 hover:bg-green-200'
-                                : isDark ? 'bg-gray-700 text-gray-400 hover:bg-[#c8f135]/20' : 'bg-gray-200 text-gray-600 hover:bg-[#c8f135]/20'
-                            }`}
-                          >
-                            {user.activo ? 'Activo' : 'Inactivo'}
-                          </button>
-                        ) : (
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+          <DataTable
+            columns={[
+              { key: 'id', label: 'ID', sortable: true, filterable: true, render: (u) => `#${u.id}` },
+              {
+                key: 'name',
+                label: 'Nombre',
+                sortable: true,
+                filterable: true,
+                render: (u) => (
+                  <div className="flex items-center gap-3">
+                    <img src={getProfileImage(u.profile_photo, u.name, API_URL.replace('/api', ''))} alt={u.name} className="w-8 h-8 rounded-full object-cover" onError={(e) => { e.target.src = getProfileImage(null, u.name); }} />
+                    <span className={`font-medium ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{u.name}</span>
+                  </div>
+                ),
+              },
+              { key: 'username', label: 'Usuario', sortable: true, filterable: true, render: (u) => <span className={`font-mono ${isDark ? 'text-[#c8f135]' : 'text-[#8ba328]'}`}>{u.username || '-'}</span> },
+              { key: 'email', label: 'Email', sortable: true, filterable: true, editable: true },
+              ...customFieldDefinitions.map(field => ({
+                key: `cf_${field.field_key}`,
+                label: field.field_label,
+                sortable: true,
+                filterable: true,
+                render: (u) => {
+                  const cf = u.custom_fields?.find(c => c.key === field.field_key);
+                  return cf?.value ?? '-';
+                },
+              })),
+              { key: 'created_at', label: 'Registrado', sortable: true, filterable: true, render: (u) => new Date(u.created_at).toLocaleDateString('es-ES') },
+            ]}
+            data={filteredUsers}
+            keyExtractor={(u) => u.id}
+            isDark={isDark}
+            loading={false}
+            emptyMessage="No hay usuarios registrados"
+            pageSize={itemsPerPage}
+            onPageSizeChange={handleItemsPerPageChange}
+            actions={[
+              {
+                render: (user) => (
+                  <div className="flex items-center gap-2">
+                    {hasPermission('users', 'edit') && (
+                      <>
+                        <button onClick={() => handleToggleActivo(user)}
+                          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
                             user.activo
-                              ? isDark ? 'bg-green-900 text-green-200' : 'bg-green-100 text-green-800'
-                              : isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'
+                              ? isDark ? 'bg-green-900 text-green-200 hover:bg-green-800' : 'bg-green-100 text-green-800 hover:bg-green-200'
+                              : isDark ? 'bg-gray-700 text-gray-400 hover:bg-[#c8f135]/20' : 'bg-gray-200 text-gray-600 hover:bg-[#c8f135]/20'
                           }`}>
-                            {user.activo ? 'Activo' : 'Inactivo'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {hasPermission('edit', 'users') && (
-                          <button
-                            onClick={() => handleEdit(user)}
-                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium mr-4 transition-all duration-200 ease-out transform hover:scale-105 hover:translate-x-0.5"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Editar
-                          </button>
-                        )}
-                        {hasPermission('delete', 'users') && (
-                          <button
-                            onClick={() => setDeleteConfirm(user.id)}
-                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium transition-all duration-200 ease-out transform hover:scale-105 hover:translate-x-0.5"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            Eliminar
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Paginación - solo si hay más registros que los mostrados por página */}
-          {filteredUsers.length > itemsPerPage && (
-            <div className={`flex justify-center items-center gap-2 p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, current_page: prev.current_page - 1 }))}
-                disabled={pagination.current_page === 1}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isDark 
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                Anterior
-              </button>
-              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                Página {pagination.current_page} de {totalPages}
-              </span>
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, current_page: prev.current_page + 1 }))}
-                disabled={pagination.current_page === totalPages}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isDark 
-                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                Siguiente
-              </button>
-            </div>
-          )}
+                          {user.activo ? 'Activo' : 'Inactivo'}
+                        </button>
+                        <button onClick={() => handleEdit(user)}
+                          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-all duration-200 ease-out transform hover:scale-105">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          Editar
+                        </button>
+                      </>
+                    )}
+                    {hasPermission('users', 'delete') && (
+                      <button onClick={() => setDeleteConfirm(user.id)}
+                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium transition-all duration-200 ease-out transform hover:scale-105">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+            onCellEdit={(row, key, value) => {
+              if (key === 'email') {
+                fetch(`${API_URL}/users/${row.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email: value }),
+                }).then(r => r.json()).then(d => {
+                  if (d.success) { loadUsers(); setSuccessMessage('Email actualizado'); }
+                  else { setError(d.message); }
+                });
+              }
+            }}
+          />
         </div>
       )}
 

@@ -13,10 +13,39 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      const parsed = JSON.parse(savedUser);
+      setUser(parsed);
+      // Refrescar datos del backend (para tener permisos actualizados)
+      refreshUserData(parsed.session_token);
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  const refreshUserData = async (token) => {
+    try {
+      const response = await fetch(`${API_URL}/me`, {
+        headers: { 'Authorization': `Bearer ${token || user?.session_token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.user) {
+        const userData = {
+          ...data.user,
+          role: data.user.role || 'operador',
+          profile_photo: data.user.profile_photo || null,
+          avatar: data.user.profile_photo
+            ? `${API_URL.replace('/api', '')}/storage/profile_photos/${data.user.profile_photo}`
+            : getProfileImage(null, data.user.name),
+        };
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
+    } catch (err) {
+      // Si falla, mantener datos de localStorage
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const register = async (email, password, name, username, passwordConfirmation) => {
     setLoading(true);
@@ -117,55 +146,28 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Funciones de permisos basadas en el rol
-  const hasPermission = (action, module = null) => {
-    if (!user || !user.role) return false;
-    
-    const role = user.role;
-    
-    // Desarrollador: todo
-    if (role === 'desarrollador') return true;
-    
-    // Operador: solo consulta
-    if (role === 'operador') {
-      return action === 'view';
+  const hasPermission = (module, action) => {
+    if (!user) return false;
+
+    if (user.role === 'desarrollador') return true;
+
+    const perms = user.effective_permissions;
+    if (!perms) return false;
+
+    if (module?.startsWith('dynamic-')) {
+      return perms[module]?.includes(action) ?? false;
     }
-    
-    // Supervisor: consulta y carga (excepto usuarios)
-    if (role === 'supervisor') {
-      if (module === 'users') return action === 'view';
-      return ['view', 'create'].includes(action);
-    }
-    
-    // Administrador: consulta, carga, edición y eliminación (incluye usuarios)
-    if (role === 'administrador') {
-      return ['view', 'create', 'edit', 'delete'].includes(action);
-    }
-    
-    return false;
+
+    if (!perms[module]) return false;
+    return perms[module].includes(action);
   };
 
-  // Verificar si puede acceder a un módulo específico
   const canAccess = (module) => {
-    if (!user || !user.role) return false;
-    
-    const role = user.role;
-    
-    // Desarrollador: todo
-    if (role === 'desarrollador') return true;
-    
-    // Todos pueden ver el dashboard y sus propios datos
-    if (module === 'dashboard' || module === 'profile') return true;
-    
-    // Solo desarrollador puede acceder a Roles
-    if (module === 'roles') return role === 'desarrollador';
+    return hasPermission(module, 'view');
+  };
 
-    // Solo desarrollador y administrador pueden gestionar usuarios, campos personalizados y auditoría
-    if (['users', 'custom-fields', 'auditoria'].includes(module)) {
-      return role === 'desarrollador' || role === 'administrador';
-    }
-
-    return false;
+  const refreshUser = async () => {
+    await refreshUserData();
   };
 
   const logout = async () => {
@@ -194,7 +196,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, register, loading, error, setError, hasPermission, canAccess }}>
+    <AuthContext.Provider value={{ user, login, logout, register, refreshUser, loading, error, setError, hasPermission, canAccess }}>
       {children}
     </AuthContext.Provider>
   );
