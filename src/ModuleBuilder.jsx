@@ -46,6 +46,7 @@ export default function ModuleBuilder({ onSuccess, onCancel, isModal = false, on
 const fieldTypes = [
   { value: 'text', label: 'Texto' },
   { value: 'number', label: 'Número' },
+  { value: 'currency', label: 'Moneda' },
   { value: 'email', label: 'Email' },
   { value: 'date', label: 'Fecha' },
   { value: 'boolean', label: 'Sí/No' },
@@ -244,8 +245,16 @@ const fieldTypes = [
       [field]: value,
     };
     // Si cambia el tipo a select-entity, inicializar entity_source
-    if (field === 'type' && value === 'select-entity' && !newFields[index].entity_source) {
-      newFields[index].entity_source = '';
+    if (field === 'type') {
+      if (value === 'select-entity' && !newFields[index].entity_source) {
+        newFields[index].entity_source = '';
+      }
+      if (value === 'currency' && !newFields[index].currency_symbol) {
+        newFields[index].currency_symbol = '$';
+      }
+      if (value !== 'currency' && newFields[index].currency_symbol) {
+        delete newFields[index].currency_symbol;
+      }
     }
     setFormConfig({ ...formConfig, fields: newFields });
   };
@@ -295,6 +304,7 @@ const fieldTypes = [
           required: f.required,
           ...(f.max_length ? { max_length: f.max_length } : {}),
           ...(f.type === 'select-entity' && f.entity_source ? { entity_source: f.entity_source } : {}),
+          ...(f.type === 'currency' && f.currency_symbol ? { currency_symbol: f.currency_symbol } : {}),
         }));
       } else {
         payload.form_title = menuConfig.name;
@@ -705,6 +715,30 @@ const fieldTypes = [
                             </option>
                           ))}
                         </select>
+                      )}
+
+                      {field.type === 'currency' && (
+                        <div>
+                          <label className={`block text-xs font-medium mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Símbolo de moneda:
+                          </label>
+                          <select
+                            value={field.currency_symbol || '$'}
+                            onChange={(e) => handleFieldChange(index, 'currency_symbol', e.target.value)}
+                            className={`w-full px-3 py-2 rounded border focus:ring-1 focus:ring-[#c8f135] focus:border-[#c8f135] outline-none text-sm ${
+                              isDark
+                                ? 'bg-[#1a1a1a] border-gray-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-900'
+                            }`}
+                          >
+                            <option value="$">$ - Dólar</option>
+                            <option value="Bs">Bs - Bolívar</option>
+                            <option value="€">€ - Euro</option>
+                            <option value="£">£ - Libra</option>
+                            <option value="R$">R$ - Real</option>
+                            <option value="¥">¥ - Yen</option>
+                          </select>
+                        </div>
                       )}
 
                       {/* Longitud máxima (solo para text, email, textarea) */}

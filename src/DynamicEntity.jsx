@@ -510,6 +510,13 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
         </div>
       );
     }
+
+    if (field.type === 'currency') {
+      const amount = parseFloat(value);
+      if (isNaN(amount)) return value;
+      const symbol = field.currency_symbol || '$';
+      return `${symbol} ${amount.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
     
     return value;
   };
@@ -566,6 +573,27 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
                 : 'bg-white border-gray-300 text-gray-900'
             }`}
           />
+        );
+
+      case 'currency':
+        return (
+          <div className="relative">
+            <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {field.currency_symbol || '$'}
+            </span>
+            <input
+              type="number"
+              step="0.01"
+              value={value}
+              onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+              required={field.required}
+              className={`w-full pl-10 px-4 py-2 rounded-lg border focus:ring-2 focus:ring-[#c8f135] outline-none ${
+                isDark
+                  ? 'bg-[#0f0f0f] border-gray-700 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              }`}
+            />
+          </div>
         );
 
       case 'select-entity': {
@@ -989,7 +1017,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
                     sortable: true,
                     filterable: true,
                     editable: !['id', 'correlativo', 'image'].includes(field.type),
-                    numeric: field.type === 'number',
+                    numeric: ['number', 'currency'].includes(field.type),
                     valueGetter: (record) => record.data?.[field.name],
                     filterLabel: (val) => {
                       if (field.type === 'select-entity') {
@@ -1049,6 +1077,7 @@ export default function DynamicEntity({ entityType: initialEntityType, onBack, o
                 onPageSizeChange={(val) => { setItemsPerPage(val); fetchRecords(1, searchTerm, val); }}
                 currentPage={pagination.current_page}
                 totalPages={pagination.last_page}
+                totalRecords={pagination.total}
                 onPageChange={(page) => fetchRecords(page, searchTerm)}
                 actions={[
                   {

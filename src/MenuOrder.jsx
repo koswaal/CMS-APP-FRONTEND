@@ -637,27 +637,22 @@ export default function MenuOrder({ onBack, onModuleCreated }) {
                         >
                           {menu.menu_name}
                         </span>
-                        {/* Flecha de expansión para contenedores padre - a la derecha del nombre */}
                         {hasChildren && (
                           <button
                             onClick={() => toggleContainerExpansion(menu.id)}
-                            className={`ml-2 p-1 rounded transition-all duration-200 hover:bg-[#c8f135]/20 ${isDark ? 'text-[#c8f135]' : 'text-green-600'}`}
-                            title={isExpanded ? 'Colapsar' : 'Expandir'}
+                            className={`ml-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition duration-200 ${isDark ? 'border-[#c8f135]/40 bg-[#c8f135]/10 text-[#c8f135]' : 'border-green-200 bg-green-50 text-green-800 hover:bg-green-100'}`}
+                            title={isExpanded ? 'Colapsar contenedor' : 'Expandir contenedor'}
                           >
                             <svg
-                              className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                              className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
                             >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7-7 7 7" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
+                            <span>Contenedor</span>
                           </button>
-                        )}
-                        {hasChildren && (
-                          <span className="px-2 py-0.5 text-xs bg-[#c8f135] text-black rounded-full font-medium">
-                            padre
-                          </span>
                         )}
                         {depth > 0 && (
                           <span className={`px-2 py-0.5 text-xs rounded-full border ${isDark ? 'bg-[#c8f135]/20 text-[#c8f135] border-[#c8f135]/30' : 'bg-green-100 text-green-700 border-green-300'}`}>

@@ -18,8 +18,10 @@ export default function DataTable({
   onSearchChange,
   currentPage,
   totalPages: totalPagesProp,
+  totalRecords,
   onPageChange,
   hideToolbar,
+  hideFooterPageInfo = false,
   showTotals = true,
   visibleKeys: externalVisibleKeys,
   onVisibleKeysChange,
@@ -190,25 +192,28 @@ export default function DataTable({
     });
   };
 
-  const LABELS = { sum: 'SUM', avg: 'PROM', min: 'MIN', max: 'MAX', count: 'CTD' };
+  const LABELS = { sum: 'Suma', avg: 'Promedio', min: 'Mínimo', max: 'Máximo', count: 'Total' };
   const CYCLE = ['sum', 'avg', 'min', 'max', 'count'];
 
   const columnTotals = useMemo(() => {
     const result = {};
+    const hasActiveFilter = Object.keys(columnFilters).length > 0;
+    const filteredCount = processed.length;
+    const totalRowCount = hasActiveFilter ? filteredCount : (totalRecords ?? filteredCount);
     columns.forEach(col => {
       if (!isNumericCol(col)) return;
       const vals = processed.map(r => parseFloat(getValue(r, col.key))).filter(v => !isNaN(v));
-      if (!vals.length) { result[col.key] = { sum: 0, avg: 0, min: 0, max: 0, count: 0 }; return; }
+      if (!vals.length) { result[col.key] = { sum: 0, avg: 0, min: 0, max: 0, count: totalRowCount }; return; }
       result[col.key] = {
         sum: vals.reduce((a, b) => a + b, 0),
         avg: vals.reduce((a, b) => a + b, 0) / vals.length,
         min: Math.min(...vals),
         max: Math.max(...vals),
-        count: vals.length,
+        count: totalRowCount,
       };
     });
     return result;
-  }, [columns, processed]);
+  }, [columns, processed, totalRecords, columnFilters]);
 
   const cycleCalc = (key) => {
     setCalcModes(prev => {
@@ -365,28 +370,18 @@ export default function DataTable({
 
       {/* Pagination */}
       {displayTotalPages > 1 && (
-        <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Mostrar:</span>
-            <select
-              value={pageSize}
-              onChange={e => onPageSizeChange?.(parseInt(e.target.value))}
-              className={`px-2 py-1 text-xs rounded border outline-none ${isDark ? 'bg-[#1a1a1a] border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}`}
-            >
-              {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => isServerSide ? onPageChange?.(displayPage - 1) : setPage(p => Math.max(1, p - 1))} disabled={displayPage === 1}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
-              ← Anterior
-            </button>
-            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Pág. {displayPage} de {displayTotalPages}</span>
-            <button onClick={() => isServerSide ? onPageChange?.(displayPage + 1) : setPage(p => Math.min(displayTotalPages, p + 1))} disabled={displayPage === displayTotalPages}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
-              Siguiente →
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center justify-center gap-2 mt-4 mb-4">
+          <button onClick={() => isServerSide ? onPageChange?.(displayPage - 1) : setPage(p => Math.max(1, p - 1))} disabled={displayPage === 1}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
+            Anterior
+          </button>
+          {!hideFooterPageInfo && (
+            <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Página {displayPage} de {displayTotalPages}</span>
+          )}
+          <button onClick={() => isServerSide ? onPageChange?.(displayPage + 1) : setPage(p => Math.min(displayTotalPages, p + 1))} disabled={displayPage === displayTotalPages}
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
+            Siguiente
+          </button>
         </div>
       )}
 
