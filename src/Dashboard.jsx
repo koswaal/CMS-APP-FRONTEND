@@ -588,16 +588,14 @@ export default function Dashboard() {
                                   className={`submenu-item group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
                                     activeMenu === `dynamic-${child.slug}`
                                       ? 'bg-[#c8f135]/10 text-[#c8f135] border-l-2 border-[#c8f135]'
-                                      : 'text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                                      : `text-gray-400 hover:bg-[#c8f135]/10 hover:text-[#c8f135]`
                                   }`}
                                   style={{
                                     transitionDelay: `${childIndex * 40}ms`
                                   }}
                                 >
-                                  <span className="text-lg text-gray-100 w-4 flex items-center justify-center">
-                                    <DynamicIcon name={child.icon} />
-                                  </span>
-                                  <span className="text-sm font-medium flex-1 text-left">{child.name}</span>
+                                  <span className="text-lg text-gray-400 w-4 flex items-center justify-center"><DynamicIcon name={child.icon} /></span>
+                                  {sidebarOpen && <span className="text-sm font-medium flex-1 text-left">{child.name}</span>}
                                 </button>
                               ))}
                             </div>
@@ -617,16 +615,17 @@ export default function Dashboard() {
             ref={submenuPopupRef}
             className={`fixed z-50 top-20 ${
               sidebarOpen ? 'left-64' : 'left-20'
-            } ml-2 rounded-xl shadow-xl border p-3 min-w-[200px] animate-fade-in ${
-              isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'
-            }`}
-          >
-            <div className="mb-2 px-2 pb-2 border-b border-gray-700/50">
-              <p className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            } ml-2 rounded-[28px] border p-3 min-w-[220px] animate-fade-in backdrop-blur-xl ${
+              isDark
+                ? 'bg-slate-950/85 border-slate-700 shadow-[0_24px_80px_rgba(0,0,0,0.35)]'
+                : 'bg-white/95 border-gray-200 shadow-[0_20px_60px_rgba(15,23,42,0.12)]'
+            }`}>
+            <div className={`mb-3 px-2 pb-2 border-b ${isDark ? 'border-slate-700/60' : 'border-gray-200'}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.28em] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                 {showSubmenuPopup.name}
               </p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {showSubmenuPopup.items.map((item) => (
                 <button
                   key={item.key}
@@ -637,12 +636,12 @@ export default function Dashboard() {
                     setActiveMenu(item.key);
                     setShowSubmenuPopup(null);
                   }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border text-sm transition-all duration-200 ${
                     activeMenu === item.key
-                      ? 'bg-[#c8f135]/10 text-[#c8f135]'
+                      ? 'bg-[#c8f135]/15 border-[#c8f135]/25 text-[#c8f135] shadow-sm'
                       : isDark
-                        ? 'text-gray-300 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
-                        : 'text-gray-700 hover:bg-[#c8f135]/10 hover:text-[#c8f135]'
+                        ? 'bg-white/5 border-white/10 text-gray-200 hover:bg-white/10 hover:text-white'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
                   {item.icon && <DynamicIcon name={item.icon} className="w-4 h-4" />}

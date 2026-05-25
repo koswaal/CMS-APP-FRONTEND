@@ -94,19 +94,26 @@ function MarkdownContentInner({ content, isDark }) {
 
 const MarkdownContent = React.memo(MarkdownContentInner);
 
-function MessageBubbleInner({ msg, isDark }) {
+function MessageBubbleInner({ msg, isDark, compact, onEdit }) {
   return (
     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-xl px-4 py-3 backdrop-blur-md ${
+      <div className={`${compact ? 'max-w-[75%] rounded-lg px-3 py-2' : 'max-w-[85%] rounded-[28px] px-5 py-4'} backdrop-blur-md bg-white/6 border ${
         msg.role === 'user'
           ? isDark
-            ? 'bg-[#c8f135]/15 border border-[#c8f135]/25 text-[#c8f135] rounded-br-md shadow-lg shadow-[#c8f135]/5'
-            : 'bg-green-500/80 border border-green-400/40 text-white rounded-br-md shadow-lg shadow-green-500/20'
+            ? 'from-[#c8f135]/12 to-[#c8f135]/4 bg-gradient-to-br border-[#c8f135]/18 text-[#c8f135] rounded-br-[18px] shadow-[0_8px_22px_rgba(200,209,53,0.12)]'
+            : 'from-green-400/16 to-green-500/12 bg-gradient-to-br border-green-400/16 text-white rounded-br-[18px] shadow-[0_8px_22px_rgba(34,197,94,0.12)]'
           : isDark
-            ? 'bg-white/[0.06] border border-white/10 text-gray-200 rounded-bl-md shadow-lg shadow-black/20'
-            : 'bg-white/70 border border-gray-200/70 text-gray-800 rounded-bl-md shadow-lg shadow-black/5'
+            ? 'from-white/12 via-white/8 to-white/4 bg-gradient-to-br border-white/12 text-gray-100 rounded-bl-[18px] shadow-[0_8px_28px_rgba(0,0,0,0.12)]'
+            : 'from-white/60 via-white/36 to-white/20 bg-gradient-to-br border-gray-200/30 text-gray-800 rounded-bl-[18px] shadow-[0_8px_24px_rgba(15,23,42,0.08)]'
       }`}>
         <MarkdownContent content={msg.content} isDark={isDark} />
+        {msg.role === 'user' && onEdit && (
+          <div className="mt-2 text-right">
+            <button className="text-xs text-gray-400 hover:text-gray-200" title="Editar" onClick={onEdit}>
+              Editar
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -137,10 +144,53 @@ export default function AiChat() {
   const chatEndRef = useRef(null);
   const modelDropdownRef = useRef(null);
   const abortRef = useRef(null);
+  const audioContextRef = useRef(null);
   const messagesRef = useRef(messages);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   const [typingMsgIndex, setTypingMsgIndex] = useState(null);
   const [typingFullContent, setTypingFullContent] = useState('');
+  const queueRef = useRef([]);
+  const [queueLen, setQueueLen] = useState(0);
+  const [compactMode, setCompactMode] = useState(false);
+  const [editingMessageIndex, setEditingMessageIndex] = useState(null);
+
+  const getAudioContext = () => {
+    if (!audioContextRef.current && typeof window !== 'undefined') {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) audioContextRef.current = new AudioContext();
+    }
+    if (audioContextRef.current?.state === 'suspended') {
+      audioContextRef.current.resume().catch(() => {});
+    }
+    return audioContextRef.current;
+  };
+
+  const playTone = (frequency, duration = 0.08, type = 'triangle', volume = 0.12, delay = 0) => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.type = type;
+    oscillator.frequency.value = frequency;
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    const now = ctx.currentTime + delay;
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.02);
+  };
+
+  const playResponseCompleteSound = () => {
+    playTone(900, 0.08, 'triangle', 0.12);
+    playTone(1400, 0.05, 'square', 0.08, 0.03);
+  };
+
+  const playResponsePausedSound = () => {
+    playTone(520, 0.1, 'sine', 0.1);
+    playTone(720, 0.12, 'triangle', 0.07, 0.04);
+  };
 
   const token = () => localStorage.getItem('session_token');
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` };
@@ -245,11 +295,25 @@ export default function AiChat() {
       abortRef.current = null;
     }
     setLoading(false);
+    playResponsePausedSound();
   };
 
   const resumeResponse = () => {
     if (!typingFullContent) return;
     setTypingMsgIndex(messages.length - 1);
+  };
+
+  const isResponsePaused = !loading && typingFullContent && typingMsgIndex === null;
+
+  const clearPausedResponse = (currentMessages = messages, paused = !!typingFullContent) => {
+    if (currentMessages.length === 0) return currentMessages;
+    const last = currentMessages[currentMessages.length - 1];
+    // If there is a paused assistant response, keep it visible.
+    // Remove trailing empty assistant placeholders only when not paused.
+    if (!paused && last.role === 'assistant' && (!last.content || last.content === '')) {
+      return currentMessages.slice(0, -1);
+    }
+    return currentMessages;
   };
 
   const createConversation = async () => {
@@ -271,6 +335,26 @@ export default function AiChat() {
       setError('Error al crear conversación');
     }
   };
+
+  const enqueueMessage = (text) => {
+    queueRef.current.push(text);
+    setQueueLen(queueRef.current.length);
+  };
+
+  const processQueue = useCallback(() => {
+    if (loading) return;
+    const next = queueRef.current.shift();
+    setQueueLen(queueRef.current.length);
+    if (next) {
+      // start sending next queued message
+      sendMessageImmediate(next).catch(() => {});
+    }
+  }, [loading]);
+
+  useEffect(() => {
+    // if queue has items and we're idle, process
+    if (!loading && queueRef.current.length > 0) processQueue();
+  }, [loading, processQueue]);
 
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
@@ -328,6 +412,9 @@ export default function AiChat() {
         setTypingMsgIndex(null);
         setTypingFullContent('');
         clearInterval(timer);
+        playResponseCompleteSound();
+        // procesar siguiente en cola
+        setTimeout(() => processQueue(), 50);
       } else {
         setMessages(prev => {
           const updated = [...prev];
@@ -339,13 +426,11 @@ export default function AiChat() {
     return () => clearInterval(timer);
   }, [typingMsgIndex, typingFullContent]);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
-    setInput('');
+  // enviar de forma inmediata (sin encolar)
+  const sendMessageImmediate = async (textParam) => {
+    const text = (typeof textParam === 'string' ? textParam : textParam?.text) || '';
+    if (!text) return;
     setError('');
-    setTypingFullContent('');
-
     let convId = activeConvId;
     if (!convId) {
       const res = await fetch(`${API_URL}/ai/conversations`, {
@@ -359,15 +444,14 @@ export default function AiChat() {
     }
 
     const userMsg = { role: 'user', content: text };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-    saveMessages(convId, updatedMessages);
+    setMessages(prev => [...prev, userMsg]);
+    saveMessages(convId, [...messagesRef.current, userMsg]);
 
     setLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const history = messages.map(m => ({ role: m.role, content: m.content }));
+      const history = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }));
       const body = { message: text, history, model: selectedModel };
       if (systemPrompt) body.system_prompt = systemPrompt;
       const chatRes = await fetch(`${API_URL}/ai/chat`, {
@@ -379,22 +463,11 @@ export default function AiChat() {
 
       if (chatData.success) {
         const assistantMsg = { role: 'assistant', content: chatData.reply };
-        const finalMessages = [...updatedMessages, assistantMsg];
-        const assistantIdx = updatedMessages.length;
-
-        // Mostrar mensaje vacío y activar typewriter
-        setMessages([...updatedMessages, { role: 'assistant', content: '' }]);
+        const assistantIdx = messagesRef.current.length + 1; // after adding userMsg
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
         setTypingMsgIndex(assistantIdx);
         setTypingFullContent(chatData.reply);
-
-        // Guardar contenido completo inmediatamente
-        saveMessages(convId, finalMessages);
-
-        if (conversations.find(c => c.id === convId)?.title === 'Nueva conversación') {
-          const title = text.length > 50 ? text.slice(0, 50) + '...' : text;
-          saveMessages(convId, finalMessages, title);
-          setConversations(prev => prev.map(c => c.id === convId ? { ...c, title } : c));
-        }
+        saveMessages(convId, [...messagesRef.current, userMsg, assistantMsg]);
       } else {
         const errMsg = chatData.errors ? Object.entries(chatData.errors).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ') : '';
         setError((chatData.message || 'Error al obtener respuesta') + (errMsg ? ' — ' + errMsg : ''));
@@ -408,8 +481,44 @@ export default function AiChat() {
     }
   };
 
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput('');
+    setError('');
+    const wasPaused = isResponsePaused;
+
+    // si ya hay una respuesta en curso, encolamos
+    if (loading || typingMsgIndex !== null) {
+      // mantener el mensaje pausado visible
+      const cleaned = clearPausedResponse(messages, wasPaused);
+      const userMsg = { role: 'user', content: text };
+      const updated = [...cleaned, userMsg];
+      setMessages(updated);
+      saveMessages(activeConvId, updated);
+      enqueueMessage(text);
+      return;
+    }
+
+    // si estamos editando un mensaje, reemplazamos y reenviamos
+    if (editingMessageIndex !== null && messages[editingMessageIndex]?.role === 'user') {
+      const updated = [...messages];
+      updated[editingMessageIndex] = { ...updated[editingMessageIndex], content: text };
+      setMessages(updated);
+      saveMessages(activeConvId, updated);
+      setEditingMessageIndex(null);
+      // enviar como nuevo
+      await sendMessageImmediate(text);
+      return;
+    }
+
+    // enviar inmediatamente
+    await sendMessageImmediate(text);
+  };
+
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Escape') { e.preventDefault(); stopResponse(); }
   };
 
   const startNewChat = () => {
@@ -487,13 +596,39 @@ export default function AiChat() {
         </button>
       </div>
 
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <button
           onClick={toggleSystemPrompt}
           className={`text-xs font-medium transition-colors ${isDark ? 'text-gray-500 hover:text-[#c8f135]' : 'text-gray-400 hover:text-green-600'}`}
         >
           {showSystemPrompt ? '− Ocultar instrucciones del sistema' : '+ Instrucciones del sistema'}
         </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className={`text-xs ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Compacto</label>
+            <button
+              onClick={() => setCompactMode(v => !v)}
+              aria-pressed={compactMode}
+              className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors focus:outline-none ${compactMode ? 'bg-[#c8f135]' : isDark ? 'bg-gray-700' : 'bg-gray-300'}`}
+            >
+              <span className={`inline-block w-4 h-4 bg-white rounded-full transform transition-transform ${compactMode ? 'translate-x-5' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <button onClick={() => {
+            const md = messages.map(m => `**${m.role}**: ${m.content}\n`).join('\n');
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'conversacion.md'; a.click(); URL.revokeObjectURL(url);
+          }} className={`px-3 py-1 text-xs rounded border transition-colors ${isDark ? 'bg-transparent border-gray-600 text-gray-200 hover:bg-gray-800' : 'bg-transparent border-gray-300 text-gray-700 hover:bg-gray-100'}`}>Exportar MD</button>
+          <button onClick={() => {
+            const data = JSON.stringify(messages, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'conversacion.json'; a.click(); URL.revokeObjectURL(url);
+          }} className={`px-3 py-1 text-xs rounded border transition-colors ${isDark ? 'bg-transparent border-gray-600 text-gray-200 hover:bg-gray-800' : 'bg-transparent border-gray-300 text-gray-700 hover:bg-gray-100'}`}>Exportar JSON</button>
+        </div>
       </div>
 
       {showSystemPrompt && (
@@ -595,7 +730,13 @@ export default function AiChat() {
               </div>
             ) : (
               messages.map((msg, i) => (
-                <MessageBubble key={i} msg={msg} isDark={isDark} />
+                <MessageBubble
+                  key={i}
+                  msg={msg}
+                  isDark={isDark}
+                  compact={compactMode}
+                  onEdit={msg.role === 'user' ? () => { setInput(msg.content); setEditingMessageIndex(i); } : undefined}
+                />
               ))
             )}
             {loading && messages.length > 0 && <div className="flex justify-start">
@@ -611,45 +752,76 @@ export default function AiChat() {
           </div>
 
           <div className="flex items-center gap-3">
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Escribí tu mensaje..."
-              rows={1}
-              className={`flex-1 px-4 py-3 rounded-lg border resize-none outline-none focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] ${
-                isDark ? 'bg-[#0f0f0f] border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              }`}
-            />
-            {(loading || typingMsgIndex !== null) ? (
-              <button
-                onClick={stopResponse}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                  isDark ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+            <div className="flex-1">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Escribí tu mensaje..."
+                rows={1}
+                className={`w-full px-4 py-3 rounded-lg border resize-none outline-none focus:ring-2 focus:ring-[#c8f135] focus:border-[#c8f135] ${
+                  isDark ? 'bg-[#0f0f0f] border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
                 }`}
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                Detener
-              </button>
-            ) : typingFullContent ? (
-              <button
-                onClick={resumeResponse}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                  isDark ? 'bg-[#c8f135]/20 text-[#c8f135] hover:bg-[#c8f135]/30' : 'bg-green-100 text-green-700 hover:bg-green-200'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                Reanudar
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                  !input.trim() ? 'opacity-50 cursor-not-allowed bg-gray-600 text-gray-400' : 'bg-[#c8f135] text-black hover:bg-[#d4f54d]'
-                }`}
-              >Enviar</button>
-            )}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {(loading || typingMsgIndex !== null) ? (
+                <button
+                  onClick={stopResponse}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+                    isDark ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                  Detener
+                </button>
+              ) : isResponsePaused ? (
+                <>
+                  <button
+                    onClick={resumeResponse}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                      isDark ? 'bg-[#c8f135]/18 text-[#c8f135] hover:bg-[#c8f135]/28' : 'bg-green-100/90 text-green-700 hover:bg-green-200'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Reanudar
+                  </button>
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      !input.trim() ? 'opacity-50 cursor-not-allowed bg-gray-600 text-gray-400' : 'bg-[#c8f135] text-black hover:bg-[#d4f54d]'
+                    }`}
+                  >Enviar</button>
+                </>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    !input.trim() ? 'opacity-50 cursor-not-allowed bg-gray-600 text-gray-400' : 'bg-[#c8f135] text-black hover:bg-[#d4f54d]'
+                  }`}
+                >Enviar</button>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => {
+                setMessages(prev => {
+                  for (let i = prev.length - 1; i >= 0; i--) {
+                    if (prev[i].role === 'user') {
+                      const updated = [...prev.slice(0, i), ...prev.slice(i + 1)];
+                      saveMessages(activeConvId, updated);
+                      return updated;
+                    }
+                  }
+                  return prev;
+                });
+              }}
+              className={`px-3 py-1 text-xs rounded border transition-colors ${isDark ? 'bg-transparent border-gray-600 text-gray-200 hover:bg-gray-800' : 'bg-transparent border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+            >Deshacer</button>
           </div>
         </div>
       </div>
